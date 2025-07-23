@@ -146,9 +146,9 @@ namespace ZenithApp.ZenithRepository
                         .Find(x => x.Id == request.applicationId && x.IsDelete == false)
                         .FirstOrDefault();
 
-                    var status = _status
-                        .Find(x => x.Id == app.Status && x.IsDelete == false)
-                        .FirstOrDefault().StatusName;
+                    //var status = _status
+                    //    .Find(x => x.Id == app.Status && x.IsDelete == false)
+                    //    .FirstOrDefault().StatusName;
 
                     if (app == null)
                     {
@@ -158,7 +158,7 @@ namespace ZenithApp.ZenithRepository
                         response.ResponseCode = 1;
                         return response;
                     }
-                    if (status != null && status == "SendToApprove")
+                    if (app.Status != null && app.Status == "SendToApprove")
                     {
 
                     }
@@ -185,7 +185,7 @@ namespace ZenithApp.ZenithRepository
                         Total_Site = app.Total_site,
                         Sample_Site = app.Sample_Site,
                         Shift_Details = app.Shift_Details,
-                        status = status,
+                        status = app.Status,
                         AssignUser = app.Fk_UserId,
                         CustomerSites = app.CustomerSites,
                         KeyPersonnels = app.KeyPersonnels,
