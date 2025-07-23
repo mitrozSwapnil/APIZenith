@@ -5,8 +5,6 @@ namespace ZenithApp.ZenithMessage
     public class addCustomerApplicationRequest : BaseRequest
     {
         public string ApplicationId { get; set; }  // For identifying the record
-
-        public int? StepNo { get; set; }
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
         public string? EmailId { get; set; }
@@ -29,6 +27,7 @@ namespace ZenithApp.ZenithMessage
         public string? Designation { get; set; }
         public string? Fk_Annaxture { get; set; }
         public string? isFinalSubmit { get; set; }
+        public int? ActiveStep { get; set; }
 
         public List<OutsourceProcessItem> OutsourceProcess { get; set; }
     }

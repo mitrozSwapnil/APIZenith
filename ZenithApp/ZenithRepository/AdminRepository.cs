@@ -57,11 +57,53 @@ namespace ZenithApp.ZenithRepository
             {
                 try
                 {
+                    if (string.IsNullOrEmpty(userId))
+                    {
+                        response.Message = "Session expired or invalid user.";
+                        response.Success = false;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                        response.ResponseCode = 1;
+                        return response;
+                    }
                     var dashboardList = new List<CustomerDashboardData>();
 
-                    var applications = await _customer
-                        .Find(x => x.IsDelete == false && x.IsFinalSubmit == true)
-                        .ToListAsync();
+                    // Step 1 — Prepare default filter
+                    var applicationFilter = Builders<tbl_customer_application>.Filter.And(
+                        Builders<tbl_customer_application>.Filter.Eq(x => x.IsDelete, false),
+                        Builders<tbl_customer_application>.Filter.Eq(x => x.IsFinalSubmit, true)
+                    );
+
+                    // Step 2 — If Flag is provided, find StatusId first
+                    if (!string.IsNullOrWhiteSpace(request.Flag))
+                    {
+                        var statusRecord = await _status
+                            .Find(x => x.StatusName.ToLower() == request.Flag.Trim().ToLower())
+                            .FirstOrDefaultAsync();
+
+                        if (statusRecord != null)
+                        {
+                            applicationFilter = Builders<tbl_customer_application>.Filter.And(
+                                applicationFilter,
+                                Builders<tbl_customer_application>.Filter.Eq(x => x.status, statusRecord.Id)
+                            );
+                        }
+                        else
+                        {
+                            // Optional: If no status found, return empty result
+                            return new getDashboardResponse
+                            {
+                                Success = true,
+                                Message = "No records found for given status.",
+                                Data = new List<CustomerDashboardData>(),
+                                HttpStatusCode = System.Net.HttpStatusCode.OK
+                            };
+                        }
+                    }
+
+                    // Step 3 — Fetch applications
+                    var applications = await _customer.Find(applicationFilter).ToListAsync();
+
+
 
                     foreach (var app in applications)
                     {
@@ -99,8 +141,29 @@ namespace ZenithApp.ZenithRepository
                             }
                         }
                     }
+                    if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                    {
+                        var searchTerm = request.SearchTerm.Trim().ToLower();
+                        dashboardList = dashboardList
+                            .Where(x =>
+                                (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+                                (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+                            )
+                            .ToList();
+                    }
+
+
+                    var totalCount = dashboardList.Count;
+                    var skip = (request.PageNumber - 1) * request.PageSize;
+
+                    var paginatedList = dashboardList
+                        .Skip(skip)
+                        .Take(request.PageSize)
+                        .ToList();
 
                     response.Data = dashboardList;
+
+                    response.TotalRecords = totalCount;
                     response.Message = "Dashboard fetched successfully.";
                     response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                     response.Success = true;

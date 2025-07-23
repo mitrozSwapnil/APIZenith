@@ -19,24 +19,6 @@ namespace ZenithApp.ZenithEntities
         public string? EmailId { get; set; }
         public string? status { get; set; }
 
-        //[BsonRepresentation(BsonType.ObjectId)]
-        //public string? Fk_ApplicationCertificate { get; set; }
-
-        //[BsonRepresentation(BsonType.ObjectId)]
-        //public string? Fk_Product_certificate { get; set; }
-
-        //[BsonRepresentation(BsonType.ObjectId)]
-        //public string? Fk_key_personnel { get; set; }
-
-        //[BsonRepresentation(BsonType.ObjectId)]
-        //public string? Fk_customer_site { get; set; }
-
-        //[BsonRepresentation(BsonType.ObjectId)]
-        //public string? Fk_Entity { get; set; }
-
-        //[BsonRepresentation(BsonType.ObjectId)]
-        //public string? FK_Outsource_Process { get; set; }
-
         [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
         public DateTime? Expected_Audit_Date { get; set; }
 
@@ -86,10 +68,10 @@ namespace ZenithApp.ZenithEntities
     }
     public class OutsourceProcessItem
     {
-        public string Process { get; set; }
-        public string Sub_contractorName { get; set; }
-        public string Location { get; set; }
-        public string controll_establish_level { get; set; }
+        public string? Process { get; set; }
+        public string? Sub_contractorName { get; set; }
+        public string? Location { get; set; }
+        public string? controll_establish_level { get; set; }
     }
 
 

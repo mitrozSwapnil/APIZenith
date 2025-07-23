@@ -41,15 +41,20 @@ namespace ZenithApp.Controllers
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
 
-            //if (action == nameof(GetReviewerDashboard))
-            //{
-            //    return _reviwerRepository.GetReviewerDashboard(request as getDashboardRequest).Result;
-            //}
+            if (action == nameof(GetReviewerDashboard))
+            {
+                return _reviwerRepository.GetReviewerDashboard(request as getDashboardRequest).Result;
+            }
+            else if (action == nameof(GetReviewerApplication))
+            {
+                return _reviwerRepository.GetReviewerApplication(request as getReviewerApplicationRequest);
+            }
+
+
+
+
+                throw new NotImplementedException();
             
-
-
-
-            throw new NotImplementedException();
         }
         protected override void Disposing()
         {

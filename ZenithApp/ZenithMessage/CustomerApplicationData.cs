@@ -1,4 +1,6 @@
-﻿namespace ZenithApp.ZenithMessage
+﻿using ZenithApp.ZenithEntities;
+
+namespace ZenithApp.ZenithMessage
 {
     public class CustomerApplicationData
     {
@@ -18,10 +20,16 @@
         public string? Designation { get; set; }
         public string? Fk_Annaxture { get; set; }
 
-        public List<string> ApplicationCertificates { get; set; }
-        public List<string> ProductCertificates { get; set; }
-        public List<KeyPersonnelList> KeyPersonnels { get; set; }
-        public List<CustomerSiteList> CustomerSites { get; set; }
-        public List<CustomerEntityList> CustomerEntities { get; set; }
+        public List<OutsourceProcessItem>? OutsourceProcess { get; set; }
+        public List<CertificateDto>? ApplicationCertificates { get; set; }
+        public List<CertificateDto>? ProductCertificates { get; set; }
+        public List<KeyPersonnelList>? KeyPersonnels { get; set; }
+        public List<CustomerSiteList>? CustomerSites { get; set; }
+        public List<CustomerEntityList>? CustomerEntities { get; set; }
+    }
+    public class CertificateDto
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
     }
 }
