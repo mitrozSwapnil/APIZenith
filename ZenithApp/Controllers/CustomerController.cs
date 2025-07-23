@@ -83,6 +83,18 @@ namespace ZenithApp.Controllers
             _acc.HttpContext?.Session.SetString("UserId", UserId);
             return this.ProcessRequest<getDashboardResponse>(model);
         }
+
+        [HttpPost("getCretificationsbyAppId")]
+        public IActionResult getCretificationsbyAppId(getCretificationsbyAppIdRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<getCretificationsbyAppIdResponse>(model);
+        }
+
+
         [HttpPost("CreateCustomerApplication")]
         public IActionResult CreateCustomerApplication(getDashboardRequest model)
         {
@@ -120,6 +132,10 @@ namespace ZenithApp.Controllers
             else if (action == nameof(GetCustomerDashboard))
             {
                 return _customerRepository.GetCustomerDashboard(request as getDashboardRequest).Result;
+            }
+            else if (action == nameof(getCretificationsbyAppId))
+            {
+                return _customerRepository.getCretificationsbyAppId(request as getCretificationsbyAppIdRequest).Result;
             }
             else if (action == nameof(CreateCustomerApplication))
             {
