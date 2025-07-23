@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Options;
+﻿using System;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using ZenithApp.Models;
 using ZenithApp.Settings;
@@ -59,7 +61,91 @@ namespace ZenithApp.ZenithRepository
 
 
 
+        public async Task<getCretificationsbyAppIdResponse> getCretificationsbyAppId(getCretificationsbyAppIdRequest request)
+        {
+            var response = new getCretificationsbyAppIdResponse();
+            try
+            {
+                var userId = _acc.HttpContext?.Session.GetString("UserId");
+                if (string.IsNullOrEmpty(userId))
+                {
+                    response.Message = "Session expired or invalid user.";
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+                var userFkRole = _user.Find(x => x.Id == userId).FirstOrDefault()?.Fk_RoleID;
+                var userType = _role.Find(x => x.Id == userFkRole).FirstOrDefault()?.roleName;
 
+                if (userType?.Trim().ToLower() != "customer")
+                {
+                    response.Message = "Invalid token or unauthorized user.";
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+
+
+
+                var applications = _customer
+                    .Find(x => x.IsDelete == false && x.Id==request.apllicationId)
+                    .ToList();
+
+
+                var dashboardList = new List<CustomerDashboardData>();
+                foreach (var app in applications)
+                {
+                    var certificates = _customercertificates
+                        .Find(x => x.Fk_Customer_Application ==request.apllicationId && x.Is_Delete == false)
+                        .ToList();
+
+                    foreach (var cert in certificates)
+                    {
+                        var masterCert = _masterCertificate
+                            .Find(x => x.Id == cert.Fk_Certificates)
+                            .FirstOrDefault();
+
+                        if (masterCert != null)
+                        {
+                            dashboardList.Add(new CustomerDashboardData
+                            {
+                                Id = app.Id,
+                                ApplicationId = app.ApplicationId,
+                                Certification_Name = masterCert.Certificate_Name,
+                                Status = app.status ?? "Pending",
+
+                                ReceiveDate = app.CreatedAt
+                            });
+                        }
+                    }
+                }
+
+
+               
+
+
+                var totalCount = dashboardList.Count;
+                
+                response.Data = dashboardList;
+             
+                response.Message = "Dashboard fetched successfully.";
+                response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                response.Success = true;
+                response.ResponseCode = 0;
+
+            }
+            catch (Exception ex)
+            {
+
+                response.Message = "Exception occurred: " + ex.Message;
+                response.Success = false;
+                response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+                response.ResponseCode = 1;
+            }
+            return response;
+        }
 
 
 
