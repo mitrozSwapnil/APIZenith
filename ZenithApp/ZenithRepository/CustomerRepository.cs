@@ -196,9 +196,23 @@ namespace ZenithApp.ZenithRepository
                         return response;
                     }
                     var existingApplication = _customer
-                        .Find(x => x.ApplicationId == request.ApplicationId)
+                        .Find(x => x.Id == request.ApplicationId)
                         .FirstOrDefault();
 
+                    bool? isFinalSubmit = null;
+                    DateTime? submitDate = null;
+
+                    // If user provided isFinalSubmit flag
+                    if (!string.IsNullOrWhiteSpace(request.isFinalSubmit))
+                    {
+                        isFinalSubmit = request.isFinalSubmit.Trim().ToLower() == "true";
+
+                        if (isFinalSubmit == true)
+                        {
+                            submitDate = DateTime.Now;
+
+                        }
+                    }
                     if (existingApplication != null)
                     {
                         if (existingApplication != null)
@@ -217,23 +231,87 @@ namespace ZenithApp.ZenithRepository
                                 .Set(x => x.Datetime, request.Datetime ?? existingApplication.Datetime)
                                 .Set(x => x.Designation, string.IsNullOrWhiteSpace(request.Designation) ? existingApplication.Designation : request.Designation)
                                 .Set(x => x.Fk_Annaxture, string.IsNullOrWhiteSpace(request.Fk_Annaxture) ? existingApplication.Fk_Annaxture : request.Fk_Annaxture)
+                                .Set(x => x.ActiveState, request.ActiveStep ?? existingApplication.ActiveState)
+                                .Set(x => x.IsFinalSubmit, isFinalSubmit)
+                                .Set(x => x.SubmitDate, submitDate ?? existingApplication.SubmitDate)
+                                .Set(x => x.status, "687a2925694d00158c9bf265")
                                 .Set(x => x.UpdatedAt, DateTime.Now)
                                 .Set(x => x.UpdatedBy, UserId);
 
                             _customer.UpdateOne(x => x.Id == existingApplication.Id, updateDefinition);
 
+                            //if (request.Fk_ApplicationCertificates?.Any() == true)
+                            //{
+                            //    foreach (var certName in request.Fk_ApplicationCertificates)
+                            //    {
+                            //        var masterCert = _masterCertificate.Find(x => x.Id == certName).FirstOrDefault();
+
+                            //        if (masterCert != null)
+                            //        {
+                            //            var existingCert = _customercertificates.Find(x =>
+                            //                x.Fk_Customer_Application == existingApplication.Id &&
+                            //                x.Fk_Certificates == masterCert.Id && x.Is_Delete == false &&
+                            //                x.CertificateType == "Regular").FirstOrDefault();
+
+                            //            if (existingCert != null)
+                            //            {
+                            //                var updateCert = Builders<tbl_customer_certificates>.Update
+                            //                    .Set(x => x.UpdatedAt, DateTime.Now)
+                            //                    .Set(x => x.UpdatedBy, UserId);
+                            //                _customercertificates.UpdateOne(x => x.Id == existingCert.Id, updateCert);
+                            //            }
+                            //            else
+                            //            {
+                            //                var customerCertificate = new tbl_customer_certificates
+                            //                {
+                            //                    Fk_Customer_Application = existingApplication.Id,
+                            //                    Fk_Certificates = masterCert.Id,
+                            //                    CertificateType = "Regular",
+                            //                    CreatedAt = DateTime.Now,
+                            //                    UpdatedAt = DateTime.Now,
+                            //                    CreatedBy = UserId,
+                            //                    UpdatedBy = UserId,
+                            //                    Is_Delete = false,
+                            //                    status = "Pending"
+                            //                };
+                            //                _customercertificates.InsertOne(customerCertificate);
+                            //            }
+                            //        }
+                            //    }
+                            //}
                             if (request.Fk_ApplicationCertificates?.Any() == true)
                             {
-                                foreach (var certName in request.Fk_ApplicationCertificates)
+                                var submittedCertIds = request.Fk_ApplicationCertificates;
+
+                                // 1. Get all existing certs of this application (type = Regular)
+                                var existingCerts = _customercertificates.Find(x =>
+                                    x.Fk_Customer_Application == existingApplication.Id &&
+                                    x.CertificateType == "Regular" &&
+                                    x.Is_Delete == false
+                                ).ToList();
+
+                                // 2. Soft-delete certs that are no longer in the new submitted list
+                                var toDeleteCerts = existingCerts
+                                    .Where(x => !submittedCertIds.Contains(x.Fk_Certificates))
+                                    .ToList();
+
+                                foreach (var cert in toDeleteCerts)
                                 {
-                                    var masterCert = _masterCertificate.Find(x => x.Certificate_Name.Trim() == certName.Trim()).FirstOrDefault();
+                                    var update = Builders<tbl_customer_certificates>.Update
+                                        .Set(x => x.Is_Delete, true)
+                                        .Set(x => x.UpdatedAt, DateTime.Now)
+                                        .Set(x => x.UpdatedBy, UserId);
+                                    _customercertificates.UpdateOne(x => x.Id == cert.Id, update);
+                                }
+
+                                // 3. Insert or update submitted certs
+                                foreach (var certId in submittedCertIds)
+                                {
+                                    var masterCert = _masterCertificate.Find(x => x.Id == certId).FirstOrDefault();
 
                                     if (masterCert != null)
                                     {
-                                        var existingCert = _customercertificates.Find(x =>
-                                            x.Fk_Customer_Application == existingApplication.Id &&
-                                            x.Fk_Certificates == masterCert.Id && x.Is_Delete == false &&
-                                            x.CertificateType == "Regular").FirstOrDefault();
+                                        var existingCert = existingCerts.FirstOrDefault(x => x.Fk_Certificates == masterCert.Id);
 
                                         if (existingCert != null)
                                         {
@@ -253,7 +331,8 @@ namespace ZenithApp.ZenithRepository
                                                 UpdatedAt = DateTime.Now,
                                                 CreatedBy = UserId,
                                                 UpdatedBy = UserId,
-                                                Is_Delete = false
+                                                Is_Delete = false,
+                                                status = "Pending"
                                             };
                                             _customercertificates.InsertOne(customerCertificate);
                                         }
@@ -261,64 +340,191 @@ namespace ZenithApp.ZenithRepository
                                 }
                             }
 
+
+                            //if (request.Fk_Product_Certificates?.Any() == true)
+                            //{
+                            //    foreach (var productCertName in request.Fk_Product_Certificates)
+                            //    {
+                            //        var masterCert = _masterCertificate.Find(x => x.Certificate_Name.Trim() == productCertName.Trim()).FirstOrDefault();
+
+                            //        if (masterCert != null)
+                            //        {
+                            //            var existingProductCert = _customercertificates.Find(x =>
+                            //                x.Fk_Customer_Application == existingApplication.Id &&
+                            //                x.Fk_Certificates == masterCert.Id && x.Is_Delete == false &&
+                            //                x.CertificateType == "Product").FirstOrDefault();
+
+                            //            if (existingProductCert != null)
+                            //            {
+                            //                var update = Builders<tbl_customer_certificates>.Update
+                            //                    .Set(x => x.UpdatedAt, DateTime.Now)
+                            //                    .Set(x => x.UpdatedBy, UserId);
+                            //                _customercertificates.UpdateOne(x => x.Id == existingProductCert.Id, update);
+                            //            }
+                            //            else
+                            //            {
+                            //                var newProductCert = new tbl_customer_certificates
+                            //                {
+                            //                    Fk_Customer_Application = existingApplication.Id,
+                            //                    Fk_Certificates = masterCert.Id,
+                            //                    CertificateType = "Product",
+                            //                    CreatedAt = DateTime.Now,
+                            //                    UpdatedAt = DateTime.Now,
+                            //                    CreatedBy = UserId,
+                            //                    UpdatedBy = UserId,
+                            //                    Is_Delete = false,
+                            //                    status = "Pending"
+                            //                };
+                            //                _customercertificates.InsertOne(newProductCert);
+                            //            }
+                            //        }
+                            //    }
+                            //}
+
                             if (request.Fk_Product_Certificates?.Any() == true)
                             {
-                                foreach (var productCertName in request.Fk_Product_Certificates)
+                                var submittedProductCertNames = request.Fk_Product_Certificates
+                                    .Select(x => x.Trim())
+                                    .ToList();
+
+                                // 1. Get all existing Product certs for this application
+                                var existingProductCerts = _customercertificates.Find(x =>
+                                    x.Fk_Customer_Application == existingApplication.Id &&
+                                    x.CertificateType == "Product" &&
+                                    x.Is_Delete == false
+                                ).ToList();
+
+                                // 2. Get master certs of all submitted product cert names
+                                var submittedMasterCerts = _masterCertificate.Find(x =>
+                                    submittedProductCertNames.Contains(x.Certificate_Name.Trim())
+                                ).ToList();
+
+                                var submittedMasterCertIds = submittedMasterCerts.Select(x => x.Id).ToList();
+
+                                // 3. Soft delete product certs that are no longer in the new list
+                                var toDelete = existingProductCerts
+                                    .Where(x => !submittedMasterCertIds.Contains(x.Fk_Certificates))
+                                    .ToList();
+
+                                foreach (var cert in toDelete)
                                 {
-                                    var masterCert = _masterCertificate.Find(x => x.Certificate_Name.Trim() == productCertName.Trim()).FirstOrDefault();
+                                    var update = Builders<tbl_customer_certificates>.Update
+                                        .Set(x => x.Is_Delete, true)
+                                        .Set(x => x.UpdatedAt, DateTime.Now)
+                                        .Set(x => x.UpdatedBy, UserId);
+                                    _customercertificates.UpdateOne(x => x.Id == cert.Id, update);
+                                }
 
-                                    if (masterCert != null)
+                                // 4. Add/update submitted certs
+                                foreach (var masterCert in submittedMasterCerts)
+                                {
+                                    var existingCert = existingProductCerts
+                                        .FirstOrDefault(x => x.Fk_Certificates == masterCert.Id);
+
+                                    if (existingCert != null)
                                     {
-                                        var existingProductCert = _customercertificates.Find(x =>
-                                            x.Fk_Customer_Application == existingApplication.Id &&
-                                            x.Fk_Certificates == masterCert.Id && x.Is_Delete == false &&
-                                            x.CertificateType == "Product").FirstOrDefault();
-
-                                        if (existingProductCert != null)
+                                        var update = Builders<tbl_customer_certificates>.Update
+                                            .Set(x => x.UpdatedAt, DateTime.Now)
+                                            .Set(x => x.UpdatedBy, UserId);
+                                        _customercertificates.UpdateOne(x => x.Id == existingCert.Id, update);
+                                    }
+                                    else
+                                    {
+                                        var newProductCert = new tbl_customer_certificates
                                         {
-                                            var update = Builders<tbl_customer_certificates>.Update
-                                                .Set(x => x.UpdatedAt, DateTime.Now)
-                                                .Set(x => x.UpdatedBy, UserId);
-                                            _customercertificates.UpdateOne(x => x.Id == existingProductCert.Id, update);
-                                        }
-                                        else
-                                        {
-                                            var newProductCert = new tbl_customer_certificates
-                                            {
-                                                Fk_Customer_Application = existingApplication.Id,
-                                                Fk_Certificates = masterCert.Id,
-                                                CertificateType = "Product",
-                                                CreatedAt = DateTime.Now,
-                                                UpdatedAt = DateTime.Now,
-                                                CreatedBy = UserId,
-                                                UpdatedBy = UserId,
-                                                Is_Delete = false
-                                            };
-                                            _customercertificates.InsertOne(newProductCert);
-                                        }
+                                            Fk_Customer_Application = existingApplication.Id,
+                                            Fk_Certificates = masterCert.Id,
+                                            CertificateType = "Product",
+                                            CreatedAt = DateTime.Now,
+                                            UpdatedAt = DateTime.Now,
+                                            CreatedBy = UserId,
+                                            UpdatedBy = UserId,
+                                            Is_Delete = false,
+                                            status = "Pending"
+                                        };
+                                        _customercertificates.InsertOne(newProductCert);
                                     }
                                 }
                             }
+
+                            //if (request.Fk_Key_Personnels?.Any() == true)
+                            //{
+                            //    foreach (var personnel in request.Fk_Key_Personnels)
+                            //    {
+                            //        if (personnel.customerKeyPersonnelId == "")
+                            //        {
+                            //            var newPersonnel = new tbl_customer_key_personnels
+                            //            {
+                            //                Fk_Customer_Application = existingApplication.Id,
+                            //                FullName = personnel.Name,
+                            //                Department = personnel.Designation,
+                            //                EmailId = personnel.EmailId,
+                            //                Contact = personnel.Contact_No,
+                            //                TypeOfPersonnel = personnel.Type,
+                            //                CreatedAt = DateTime.Now,
+                            //                UpdatedAt = DateTime.Now,
+                            //                CreatedBy = UserId,
+                            //                UpdatedBy = UserId,
+                            //                Is_Delete = false
+                            //            };
+                            //            _customerKeyPersonnel.InsertOne(newPersonnel);
+                            //        }
+                            //        else
+                            //        {
+                            //            var existingPersonnel = _customerKeyPersonnel.Find(x =>
+                            //                            x.Fk_Customer_Application == existingApplication.Id &&
+                            //                            x.Is_Delete == false &&
+                            //                            x.Id == personnel.customerKeyPersonnelId).FirstOrDefault();
+
+
+                            //            if (existingPersonnel != null)
+                            //            {
+                            //                var update = Builders<tbl_customer_key_personnels>.Update
+                            //                    .Set(x => x.FullName, string.IsNullOrWhiteSpace(personnel.Name) ? existingPersonnel.FullName : personnel.Name)
+                            //                    .Set(x => x.Department, string.IsNullOrWhiteSpace(personnel.Designation) ? existingPersonnel.Department : personnel.Designation)
+                            //                    .Set(x => x.Contact, string.IsNullOrWhiteSpace(personnel.Contact_No) ? existingPersonnel.Contact : personnel.Contact_No)
+                            //                    .Set(x => x.TypeOfPersonnel, string.IsNullOrWhiteSpace(personnel.Type) ? existingPersonnel.TypeOfPersonnel : personnel.Type)
+                            //                    .Set(x => x.UpdatedAt, DateTime.Now)
+                            //                    .Set(x => x.UpdatedBy, UserId);
+                            //                _customerKeyPersonnel.UpdateOne(x => x.Id == existingPersonnel.Id, update);
+                            //            }
+                            //        }
+
+
+                            //    }
+                            //}
+
                             if (request.Fk_Key_Personnels?.Any() == true)
                             {
+                                var submittedPersonnelIds = request.Fk_Key_Personnels
+                                    .Where(x => !string.IsNullOrWhiteSpace(x.customerKeyPersonnelId))
+                                    .Select(x => x.customerKeyPersonnelId)
+                                    .ToList();
+
+                                // 1. Fetch existing personnel for this application
+                                var existingPersonnels = _customerKeyPersonnel.Find(x =>
+                                    x.Fk_Customer_Application == existingApplication.Id &&
+                                    x.Is_Delete == false
+                                ).ToList();
+
+                                // 2. Soft-delete personnel not present in current submission
+                                var toDelete = existingPersonnels
+                                    .Where(x => !submittedPersonnelIds.Contains(x.Id))
+                                    .ToList();
+
+                                foreach (var person in toDelete)
+                                {
+                                    var update = Builders<tbl_customer_key_personnels>.Update
+                                        .Set(x => x.Is_Delete, true)
+                                        .Set(x => x.UpdatedAt, DateTime.Now)
+                                        .Set(x => x.UpdatedBy, UserId);
+                                    _customerKeyPersonnel.UpdateOne(x => x.Id == person.Id, update);
+                                }
+
+                                // 3. Insert or update personnel from current request
                                 foreach (var personnel in request.Fk_Key_Personnels)
                                 {
-                                    var existingPersonnel = _customerKeyPersonnel.Find(x =>
-                                        x.Fk_Customer_Application == existingApplication.Id && x.Is_Delete == false &&
-                                        x.Id == personnel.customerKeyPersonnelId).FirstOrDefault();
-
-                                    if (existingPersonnel != null)
-                                    {
-                                        var update = Builders<tbl_customer_key_personnels>.Update
-                                            .Set(x => x.FullName, string.IsNullOrWhiteSpace(personnel.Name) ? existingPersonnel.FullName : personnel.Name)
-                                            .Set(x => x.Department, string.IsNullOrWhiteSpace(personnel.Designation) ? existingPersonnel.Department : personnel.Designation)
-                                            .Set(x => x.Contact, string.IsNullOrWhiteSpace(personnel.Contact_No) ? existingPersonnel.Contact : personnel.Contact_No)
-                                            .Set(x => x.TypeOfPersonnel, string.IsNullOrWhiteSpace(personnel.Type) ? existingPersonnel.TypeOfPersonnel : personnel.Type)
-                                            .Set(x => x.UpdatedAt, DateTime.Now)
-                                            .Set(x => x.UpdatedBy, UserId);
-                                        _customerKeyPersonnel.UpdateOne(x => x.Id == existingPersonnel.Id, update);
-                                    }
-                                    else
+                                    if (personnel.customerKeyPersonnelId == "")
                                     {
                                         var newPersonnel = new tbl_customer_key_personnels
                                         {
@@ -336,31 +542,108 @@ namespace ZenithApp.ZenithRepository
                                         };
                                         _customerKeyPersonnel.InsertOne(newPersonnel);
                                     }
+                                    else
+                                    {
+                                        var existingPersonnel = existingPersonnels
+                                            .FirstOrDefault(x => x.Id == personnel.customerKeyPersonnelId);
+
+                                        if (existingPersonnel != null)
+                                        {
+                                            var update = Builders<tbl_customer_key_personnels>.Update
+                                                .Set(x => x.FullName, string.IsNullOrWhiteSpace(personnel.Name) ? existingPersonnel.FullName : personnel.Name)
+                                                .Set(x => x.Department, string.IsNullOrWhiteSpace(personnel.Designation) ? existingPersonnel.Department : personnel.Designation)
+                                                .Set(x => x.EmailId, string.IsNullOrWhiteSpace(personnel.EmailId) ? existingPersonnel.EmailId : personnel.EmailId)
+                                                .Set(x => x.Contact, string.IsNullOrWhiteSpace(personnel.Contact_No) ? existingPersonnel.Contact : personnel.Contact_No)
+                                                .Set(x => x.TypeOfPersonnel, string.IsNullOrWhiteSpace(personnel.Type) ? existingPersonnel.TypeOfPersonnel : personnel.Type)
+                                                .Set(x => x.UpdatedAt, DateTime.Now)
+                                                .Set(x => x.UpdatedBy, UserId);
+
+                                            _customerKeyPersonnel.UpdateOne(x => x.Id == existingPersonnel.Id, update);
+                                        }
+                                    }
                                 }
                             }
 
+
+                            //if (request.Fk_Customer_Sites?.Any() == true)
+                            //{
+                            //    foreach (var site in request.Fk_Customer_Sites)
+                            //    {
+                            //        if (site.customer_SiteId == "")
+                            //        {
+                            //            var newSite = new tbl_customer_site
+                            //            {
+                            //                Fk_Customer_Application = existingApplication.Id,
+                            //                Address = site.Address,
+                            //                Telephone = site.Telephone,
+                            //                Web = site.Web,
+                            //                Email = site.Email,
+                            //                Activity_Department = site.Activity_Department,
+                            //                Manpower = site.Manpower,
+                            //                Shift_Name = site.Shift_Name,
+                            //                CreatedAt = DateTime.Now,
+                            //                UpdatedAt = DateTime.Now,
+                            //                CreatedBy = UserId,
+                            //                UpdatedBy = UserId,
+                            //                Is_Delete = false
+                            //            };
+                            //            _customersite.InsertOne(newSite);
+                            //        }
+                            //        else
+                            //        {
+                            //            var existingSite = _customersite.Find(x =>
+                            //            x.Fk_Customer_Application == existingApplication.Id &&
+                            //            x.Id == site.customer_SiteId &&
+                            //            x.Is_Delete == false).FirstOrDefault();
+
+                            //            if (existingSite != null)
+                            //            {
+                            //                var update = Builders<tbl_customer_site>.Update
+                            //                    .Set(x => x.Telephone, string.IsNullOrWhiteSpace(site.Telephone) ? existingSite.Telephone : site.Telephone)
+                            //                    .Set(x => x.Web, string.IsNullOrWhiteSpace(site.Web) ? existingSite.Web : site.Web)
+                            //                    .Set(x => x.Activity_Department, string.IsNullOrWhiteSpace(site.Activity_Department) ? existingSite.Activity_Department : site.Activity_Department)
+                            //                    .Set(x => x.Manpower, string.IsNullOrWhiteSpace(site.Manpower) ? existingSite.Manpower : site.Manpower)
+                            //                    .Set(x => x.Shift_Name, string.IsNullOrWhiteSpace(site.Shift_Name) ? existingSite.Shift_Name : site.Shift_Name)
+                            //                    .Set(x => x.UpdatedAt, DateTime.Now)
+                            //                    .Set(x => x.UpdatedBy, UserId);
+                            //                _customersite.UpdateOne(x => x.Id == existingSite.Id, update);
+                            //            }
+                            //        }
+
+                            //    }
+                            //}
+
+
                             if (request.Fk_Customer_Sites?.Any() == true)
                             {
+                                var submittedSiteIds = request.Fk_Customer_Sites
+                                    .Where(x => !string.IsNullOrWhiteSpace(x.customer_SiteId))
+                                    .Select(x => x.customer_SiteId)
+                                    .ToList();
+
+                                var existingSites = _customersite.Find(x =>
+                                    x.Fk_Customer_Application == existingApplication.Id &&
+                                    x.Is_Delete == false
+                                ).ToList();
+
+                                // Soft-delete removed sites
+                                var toDeleteSites = existingSites
+                                    .Where(x => !submittedSiteIds.Contains(x.Id))
+                                    .ToList();
+
+                                foreach (var site in toDeleteSites)
+                                {
+                                    var update = Builders<tbl_customer_site>.Update
+                                        .Set(x => x.Is_Delete, true)
+                                        .Set(x => x.UpdatedAt, DateTime.Now)
+                                        .Set(x => x.UpdatedBy, UserId);
+                                    _customersite.UpdateOne(x => x.Id == site.Id, update);
+                                }
+
+                                // Insert/update current sites
                                 foreach (var site in request.Fk_Customer_Sites)
                                 {
-                                    var existingSite = _customersite.Find(x =>
-                                        x.Fk_Customer_Application == existingApplication.Id &&
-                                        x.Id == site.customer_SiteId &&
-                                        x.Is_Delete == false).FirstOrDefault();
-
-                                    if (existingSite != null)
-                                    {
-                                        var update = Builders<tbl_customer_site>.Update
-                                            .Set(x => x.Telephone, string.IsNullOrWhiteSpace(site.Telephone) ? existingSite.Telephone : site.Telephone)
-                                            .Set(x => x.Web, string.IsNullOrWhiteSpace(site.Web) ? existingSite.Web : site.Web)
-                                            .Set(x => x.Activity_Department, string.IsNullOrWhiteSpace(site.Activity_Department) ? existingSite.Activity_Department : site.Activity_Department)
-                                            .Set(x => x.Manpower, string.IsNullOrWhiteSpace(site.Manpower) ? existingSite.Manpower : site.Manpower)
-                                            .Set(x => x.Shift_Name, string.IsNullOrWhiteSpace(site.Shift_Name) ? existingSite.Shift_Name : site.Shift_Name)
-                                            .Set(x => x.UpdatedAt, DateTime.Now)
-                                            .Set(x => x.UpdatedBy, UserId);
-                                        _customersite.UpdateOne(x => x.Id == existingSite.Id, update);
-                                    }
-                                    else
+                                    if (site.customer_SiteId == "")
                                     {
                                         var newSite = new tbl_customer_site
                                         {
@@ -380,26 +663,99 @@ namespace ZenithApp.ZenithRepository
                                         };
                                         _customersite.InsertOne(newSite);
                                     }
+                                    else
+                                    {
+                                        var existingSite = existingSites
+                                            .FirstOrDefault(x => x.Id == site.customer_SiteId);
+
+                                        if (existingSite != null)
+                                        {
+                                            var update = Builders<tbl_customer_site>.Update
+                                                .Set(x => x.Telephone, string.IsNullOrWhiteSpace(site.Telephone) ? existingSite.Telephone : site.Telephone)
+                                                .Set(x => x.Web, string.IsNullOrWhiteSpace(site.Web) ? existingSite.Web : site.Web)
+                                                .Set(x => x.Activity_Department, string.IsNullOrWhiteSpace(site.Activity_Department) ? existingSite.Activity_Department : site.Activity_Department)
+                                                .Set(x => x.Manpower, string.IsNullOrWhiteSpace(site.Manpower) ? existingSite.Manpower : site.Manpower)
+                                                .Set(x => x.Shift_Name, string.IsNullOrWhiteSpace(site.Shift_Name) ? existingSite.Shift_Name : site.Shift_Name)
+                                                .Set(x => x.Email, string.IsNullOrWhiteSpace(site.Email) ? existingSite.Email : site.Email)
+                                                .Set(x => x.UpdatedAt, DateTime.Now)
+                                                .Set(x => x.UpdatedBy, UserId);
+
+                                            _customersite.UpdateOne(x => x.Id == existingSite.Id, update);
+                                        }
+                                    }
                                 }
                             }
+
+
+                            //if (request.Fk_Customer_Entity?.Any() == true)
+                            //{
+                            //    foreach (var entity in request.Fk_Customer_Entity)
+                            //    {
+                            //        if(entity.customer_EntityId == "")
+                            //        {
+                            //            var newEntity = new tbl_customer_Entity
+                            //            {
+                            //                Fk_Customer_Application = existingApplication.Id,
+                            //                Entity_Name = entity.Name_of_Entity,
+                            //                Identification_Number = entity.Identification_Number,
+                            //                file = entity.file,
+                            //                CreatedAt = DateTime.Now,
+                            //                UpdatedAt = DateTime.Now,
+                            //                CreatedBy = UserId,
+                            //                UpdatedBy = UserId,
+                            //                Is_Delete = false
+                            //            };
+                            //            _customerentity.InsertOne(newEntity);
+                            //        }
+                            //        else
+                            //        {
+                            //            var existingEntity = _customerentity.Find(x =>
+                            //                x.Fk_Customer_Application == existingApplication.Id &&
+                            //                x.Id == entity.customer_EntityId).FirstOrDefault();
+
+                            //            if (existingEntity != null)
+                            //            {
+                            //                var update = Builders<tbl_customer_Entity>.Update
+                            //                    .Set(x => x.Identification_Number, string.IsNullOrWhiteSpace(entity.Identification_Number) ? existingEntity.Identification_Number : entity.Identification_Number)
+                            //                    .Set(x => x.file, string.IsNullOrWhiteSpace(entity.file) ? existingEntity.file : entity.file)
+                            //                    .Set(x => x.UpdatedAt, DateTime.Now)
+                            //                    .Set(x => x.UpdatedBy, UserId);
+                            //                _customerentity.UpdateOne(x => x.Id == existingEntity.Id, update);
+                            //            }
+                            //        }
+                            //    }
+                            //}
+
                             if (request.Fk_Customer_Entity?.Any() == true)
                             {
+                                var submittedEntityIds = request.Fk_Customer_Entity
+                                    .Where(x => !string.IsNullOrWhiteSpace(x.customer_EntityId))
+                                    .Select(x => x.customer_EntityId)
+                                    .ToList();
+
+                                var existingEntities = _customerentity.Find(x =>
+                                    x.Fk_Customer_Application == existingApplication.Id &&
+                                    x.Is_Delete == false
+                                ).ToList();
+
+                                // Soft-delete removed entities
+                                var toDeleteEntities = existingEntities
+                                    .Where(x => !submittedEntityIds.Contains(x.Id))
+                                    .ToList();
+
+                                foreach (var entity in toDeleteEntities)
+                                {
+                                    var update = Builders<tbl_customer_Entity>.Update
+                                        .Set(x => x.Is_Delete, true)
+                                        .Set(x => x.UpdatedAt, DateTime.Now)
+                                        .Set(x => x.UpdatedBy, UserId);
+                                    _customerentity.UpdateOne(x => x.Id == entity.Id, update);
+                                }
+
+                                // Insert/update current entities
                                 foreach (var entity in request.Fk_Customer_Entity)
                                 {
-                                    var existingEntity = _customerentity.Find(x =>
-                                        x.Fk_Customer_Application == existingApplication.Id &&
-                                        x.Id == entity.customer_EntityId).FirstOrDefault();
-
-                                    if (existingEntity != null)
-                                    {
-                                        var update = Builders<tbl_customer_Entity>.Update
-                                            .Set(x => x.Identification_Number, string.IsNullOrWhiteSpace(entity.Identification_Number) ? existingEntity.Identification_Number : entity.Identification_Number)
-                                            .Set(x => x.file, string.IsNullOrWhiteSpace(entity.file) ? existingEntity.file : entity.file)
-                                            .Set(x => x.UpdatedAt, DateTime.Now)
-                                            .Set(x => x.UpdatedBy, UserId);
-                                        _customerentity.UpdateOne(x => x.Id == existingEntity.Id, update);
-                                    }
-                                    else
+                                    if (entity.customer_EntityId == "")
                                     {
                                         var newEntity = new tbl_customer_Entity
                                         {
@@ -415,9 +771,59 @@ namespace ZenithApp.ZenithRepository
                                         };
                                         _customerentity.InsertOne(newEntity);
                                     }
+                                    else
+                                    {
+                                        var existingEntity = existingEntities
+                                            .FirstOrDefault(x => x.Id == entity.customer_EntityId);
+
+                                        if (existingEntity != null)
+                                        {
+                                            var update = Builders<tbl_customer_Entity>.Update
+                                                .Set(x => x.Identification_Number, string.IsNullOrWhiteSpace(entity.Identification_Number) ? existingEntity.Identification_Number : entity.Identification_Number)
+                                                .Set(x => x.file, string.IsNullOrWhiteSpace(entity.file) ? existingEntity.file : entity.file)
+                                                .Set(x => x.UpdatedAt, DateTime.Now)
+                                                .Set(x => x.UpdatedBy, UserId);
+                                            _customerentity.UpdateOne(x => x.Id == existingEntity.Id, update);
+                                        }
+                                    }
                                 }
                             }
 
+
+
+                            //if (request.ApplicationId != null)
+                            //{
+
+                            //    var updatprocess = Builders<tbl_customer_application>.Update
+                            //        .Set(x => x.OutsourceProcess, request.OutsourceProcess?.Select(p => new OutsourceProcessItem
+                            //        {
+                            //            Process = p.Process,
+                            //            Sub_contractorName = p.Sub_contractorName,
+                            //            Location = p.Location,
+                            //            controll_establish_level = p.controll_establish_level
+                            //        }).ToList())
+                            //        .Set(x => x.UpdatedAt, DateTime.Now)
+                            //        .Set(x => x.UpdatedBy, UserId);
+
+                            //    _customer.UpdateOne(x => x.Id == request.ApplicationId, updatprocess);
+
+                            //}
+
+                            if (request.ApplicationId != null)
+                            {
+                                var updatprocess = Builders<tbl_customer_application>.Update
+                                    .Set(x => x.OutsourceProcess, request.OutsourceProcess?.Select(p => new OutsourceProcessItem
+                                    {
+                                        Process = p.Process,
+                                        Sub_contractorName = p.Sub_contractorName,
+                                        Location = p.Location,
+                                        controll_establish_level = p.controll_establish_level
+                                    }).ToList())
+                                    .Set(x => x.UpdatedAt, DateTime.Now)
+                                    .Set(x => x.UpdatedBy, UserId);
+
+                                _customer.UpdateOne(x => x.Id == request.ApplicationId, updatprocess);
+                            }
 
 
 
@@ -430,188 +836,167 @@ namespace ZenithApp.ZenithRepository
                         }
 
                     }
-                    bool? isFinalSubmit = null;
-                    DateTime? submitDate = null;
-
-                    // If user provided isFinalSubmit flag
-                    if (!string.IsNullOrWhiteSpace(request.isFinalSubmit))
+                    else
                     {
-                        isFinalSubmit = request.isFinalSubmit.Trim().ToLower() == "true";
-
-                        if (isFinalSubmit == true)
+                        var customerApplication = new tbl_customer_application
                         {
-                            submitDate = DateTime.Now;
-
-                        }
-                    }
-                    var customerApplication = new tbl_customer_application
-                    {
-                        ApplicationId = request.ApplicationId,
-                        Orgnization_Name = request.Orgnization_Name,
-                        Constituation_of_Orgnization = request.Constituation_of_Orgnization,
-                        EmailId = request.EmailId,
-                        Expected_Audit_Date = request.Expected_Audit_Date,
-                        Holiday = request.Holiday,
-                        Audit_Language = request.Audit_Language,
-                        ConsultantName = request.ConsultantName,
-                        FileName = request.FileName,
-                        Name = request.Name,
-                        Contact_details = request.Contact_details,
-                        Datetime = request.Datetime,
-                        Designation = request.Designation,
-                        Fk_Annaxture = request.Fk_Annaxture,
-                        CreatedAt = DateTime.Now,
-                        UpdatedAt = DateTime.Now,
-                        CreatedBy = UserId,
-                        UpdatedBy = UserId,
-                        IsDelete = false,
-                        IsFinalSubmit = isFinalSubmit,
-                        SubmitDate = submitDate,
-                        status = "687a2925694d00158c9bf265"
-                    };
-                    _customer.InsertOne(customerApplication);
+                            ApplicationId = request.ApplicationId,
+                            Orgnization_Name = request.Orgnization_Name,
+                            Constituation_of_Orgnization = request.Constituation_of_Orgnization,
+                            EmailId = request.EmailId,
+                            Expected_Audit_Date = request.Expected_Audit_Date,
+                            Holiday = request.Holiday,
+                            Audit_Language = request.Audit_Language,
+                            ConsultantName = request.ConsultantName,
+                            FileName = request.FileName,
+                            Name = request.Name,
+                            Contact_details = request.Contact_details,
+                            Datetime = request.Datetime,
+                            Designation = request.Designation,
+                            Fk_Annaxture = request.Fk_Annaxture,
+                            CreatedAt = DateTime.Now,
+                            UpdatedAt = DateTime.Now,
+                            CreatedBy = UserId,
+                            UpdatedBy = UserId,
+                            IsDelete = false,
+                            IsFinalSubmit = isFinalSubmit,
+                            SubmitDate = submitDate,
+                            status = "687a2925694d00158c9bf265",
+                            ActiveState = request.ActiveStep
+                        };
+                        _customer.InsertOne(customerApplication);
 
 
 
 
 
-                    if (request.Fk_ApplicationCertificates?.Any() == true)
-                    {
-                        foreach (var certificateId in request.Fk_ApplicationCertificates)
+                        if (request.Fk_ApplicationCertificates?.Any() == true)
                         {
-                            var findedCertificate = _masterCertificate
-                                     .Find(x => x.Certificate_Name.Trim() == certificateId.Trim())
-                                     .FirstOrDefault();
-
-                            if (findedCertificate != null)
+                            foreach (var certificateId in request.Fk_ApplicationCertificates)
                             {
-                                var customerCertificate = new tbl_customer_certificates
+                                var findedCertificate = _masterCertificate
+                                         .Find(x => x.Certificate_Name.Trim() == certificateId.Trim())
+                                         .FirstOrDefault();
+
+                                if (findedCertificate != null)
+                                {
+                                    var customerCertificate = new tbl_customer_certificates
+                                    {
+                                        Fk_Customer_Application = customerApplication.Id,
+                                        Fk_Certificates = findedCertificate.Id,
+                                        Is_Delete = false,
+                                        CertificateType = "Regular",
+                                        CreatedAt = DateTime.Now,
+                                        UpdatedAt = DateTime.Now,
+                                        CreatedBy = UserId,
+                                        UpdatedBy = UserId
+                                    };
+                                    _customercertificates.InsertOne(customerCertificate);
+                                }
+
+                            }
+                        }
+
+                        if (request.Fk_Product_Certificates?.Any() == true)
+                        {
+                            foreach (var productCertificateId in request.Fk_Product_Certificates)
+                            {
+                                var findedProductCertificateId = _masterCertificate
+                                    .Find(x => x.Certificate_Name.Trim() == productCertificateId.Trim())
+                                    .FirstOrDefault()?.Id;
+                                var customerProductCertificate = new tbl_customer_certificates
                                 {
                                     Fk_Customer_Application = customerApplication.Id,
-                                    Fk_Certificates = findedCertificate.Id,
+                                    Fk_Certificates = findedProductCertificateId,
                                     Is_Delete = false,
-                                    CertificateType = "Regular",
+                                    CertificateType = "Product",
                                     CreatedAt = DateTime.Now,
                                     UpdatedAt = DateTime.Now,
                                     CreatedBy = UserId,
                                     UpdatedBy = UserId
                                 };
-                                _customercertificates.InsertOne(customerCertificate);
+                                _customercertificates.InsertOne(customerProductCertificate);
                             }
-
                         }
-                    }
-
-                    if (request.Fk_Product_Certificates?.Any() == true)
-                    {
-                        foreach (var productCertificateId in request.Fk_Product_Certificates)
+                        if (request.Fk_Key_Personnels?.Any() == true)
                         {
-                            var findedProductCertificateId = _masterCertificate
-                                .Find(x => x.Certificate_Name.Trim() == productCertificateId.Trim())
-                                .FirstOrDefault()?.Id;
-                            var customerProductCertificate = new tbl_customer_certificates
+                            foreach (var keyPersonnel in request.Fk_Key_Personnels)
                             {
-                                Fk_Customer_Application = customerApplication.Id,
-                                Fk_Certificates = findedProductCertificateId,
-                                Is_Delete = false,
-                                CertificateType = "Product",
-                                CreatedAt = DateTime.Now,
-                                UpdatedAt = DateTime.Now,
-                                CreatedBy = UserId,
-                                UpdatedBy = UserId
-                            };
-                            _customercertificates.InsertOne(customerProductCertificate);
+                                var customerKeyPersonnel = new tbl_customer_key_personnels
+                                {
+                                    Fk_Customer_Application = customerApplication.Id,
+                                    FullName = keyPersonnel.Name,
+                                    Department = keyPersonnel.Designation,
+                                    EmailId = keyPersonnel.EmailId,
+                                    Contact = keyPersonnel.Contact_No,
+                                    CreatedAt = DateTime.Now,
+                                    UpdatedAt = DateTime.Now,
+                                    CreatedBy = UserId,
+                                    UpdatedBy = UserId,
+                                    TypeOfPersonnel = keyPersonnel.Type,
+                                    Is_Delete = false
+
+                                };
+                                _customerKeyPersonnel.InsertOne(customerKeyPersonnel);
+                            }
                         }
-                    }
-                    if (request.Fk_Key_Personnels?.Any() == true)
-                    {
-                        foreach (var keyPersonnel in request.Fk_Key_Personnels)
+                        if (request.Fk_Customer_Sites?.Any() == true)
                         {
-                            var customerKeyPersonnel = new tbl_customer_key_personnels
+                            foreach (var siteDetails in request.Fk_Customer_Sites)
                             {
-                                Fk_Customer_Application = customerApplication.Id,
-                                FullName = keyPersonnel.Name,
-                                Department = keyPersonnel.Designation,
-                                EmailId = keyPersonnel.EmailId,
-                                Contact = keyPersonnel.Contact_No,
-                                CreatedAt = DateTime.Now,
-                                UpdatedAt = DateTime.Now,
-                                CreatedBy = UserId,
-                                UpdatedBy = UserId,
-                                TypeOfPersonnel = keyPersonnel.Type,
-                                Is_Delete = false
-
-                            };
-                            _customerKeyPersonnel.InsertOne(customerKeyPersonnel);
+                                var customer_Site = new tbl_customer_site
+                                {
+                                    Fk_Customer_Application = customerApplication.Id,
+                                    Address = siteDetails.Address,
+                                    Telephone = siteDetails.Telephone,
+                                    Web = siteDetails.Web,
+                                    Email = siteDetails.Email,
+                                    Activity_Department = siteDetails.Activity_Department,
+                                    Manpower = siteDetails.Manpower,
+                                    Shift_Name = siteDetails.Shift_Name,
+                                    CreatedAt = DateTime.Now,
+                                    UpdatedAt = DateTime.Now,
+                                    CreatedBy = UserId,
+                                    UpdatedBy = UserId,
+                                    Is_Delete = false
+                                };
+                                _customersite.InsertOne(customer_Site);
+                            }
                         }
-                    }
-                    if (request.Fk_Customer_Sites?.Any() == true)
-                    {
-                        foreach (var siteDetails in request.Fk_Customer_Sites)
+                        if (request.Fk_Customer_Entity?.Any() == true)
                         {
-                            var customer_Site = new tbl_customer_site
+                            foreach (var entityList in request.Fk_Customer_Entity)
                             {
-                                Fk_Customer_Application = customerApplication.Id,
-                                Address = siteDetails.Address,
-                                Telephone = siteDetails.Telephone,
-                                Web = siteDetails.Web,
-                                Email = siteDetails.Email,
-                                Activity_Department = siteDetails.Activity_Department,
-                                Manpower = siteDetails.Manpower,
-                                Shift_Name = siteDetails.Shift_Name,
-                                CreatedAt = DateTime.Now,
-                                UpdatedAt = DateTime.Now,
-                                CreatedBy = UserId,
-                                UpdatedBy = UserId,
-                                Is_Delete = false
-                            };
-                            _customersite.InsertOne(customer_Site);
+                                var customer_Entity = new tbl_customer_Entity
+                                {
+                                    Fk_Customer_Application = customerApplication.Id,
+                                    Entity_Name = entityList.Name_of_Entity,
+                                    Identification_Number = entityList.Identification_Number,
+                                    file = entityList.file,
+                                    CreatedAt = DateTime.Now,
+                                    UpdatedAt = DateTime.Now,
+                                    CreatedBy = UserId,
+                                    UpdatedBy = UserId,
+                                    Is_Delete = false
+                                };
+                                _customerentity.InsertOne(customer_Entity);
+                            }
                         }
-                    }
-                    if (request.Fk_Customer_Entity?.Any() == true)
-                    {
-                        foreach (var entityList in request.Fk_Customer_Entity)
-                        {
-                            var customer_Entity = new tbl_customer_Entity
-                            {
-                                Fk_Customer_Application = customerApplication.Id,
-                                Entity_Name = entityList.Name_of_Entity,
-                                Identification_Number = entityList.Identification_Number,
-                                file = entityList.file,
-                                CreatedAt = DateTime.Now,
-                                UpdatedAt = DateTime.Now,
-                                CreatedBy = UserId,
-                                UpdatedBy = UserId,
-                                Is_Delete = false
-                            };
-                            _customerentity.InsertOne(customer_Entity);
-                        }
-                    }
 
-                    if (customerApplication.Id != null)
-                    {
-                       
-                        var updateDefinition = Builders<tbl_customer_application>.Update
-                            .Set(x => x.OutsourceProcess, request.OutsourceProcess?.Select(p => new OutsourceProcessItem
-                            {
-                                Process = p.Process,
-                                Sub_contractorName = p.Sub_contractorName,
-                                Location = p.Location,
-                                controll_establish_level = p.controll_establish_level
-                            }).ToList())
-                            .Set(x => x.UpdatedAt, DateTime.Now)
-                            .Set(x => x.UpdatedBy, UserId);
+                        
 
-                        _customer.UpdateOne(x => x.Id == customerApplication.Id, updateDefinition);
+
+
+                        response.Message = "Customer Application Submited Successfully.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 0;
 
                     }
 
-
-
-                    response.Message = "Customer Application Submited Successfully.";
-                    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                    response.Success = true;
-                    response.ResponseCode = 0;
+                    
+                    
+                   
 
                 }
                 catch (Exception ex)
@@ -634,105 +1019,7 @@ namespace ZenithApp.ZenithRepository
             return response; 
         }
 
-        //public async Task<getDashboardResponse> GetCustomerDashboard(getDashboardRequest request)
-        //{
-        //    getDashboardResponse response = new getDashboardResponse();
-        //    var UserId = _acc.HttpContext?.Session.GetString("UserId");
-        //    var userFkRole = _user
-        //                    .Find(x => x.Id == UserId)
-        //                    .FirstOrDefault()?.Fk_RoleID;
-        //    var usertype = _role
-        //                    .Find(x => x.Id == userFkRole)
-        //                    .FirstOrDefault()?.roleName;
-
-        //    if (usertype?.Trim().ToLower() == "customer")
-        //    {
-        //        try
-        //        {
-        //            List<CustomerDashboardData> dashboardList = new List<CustomerDashboardData>();
-
-        //            var applications = _customer
-        //               .Find(x => x.IsDelete == false)
-        //               .ToList();
-
-        //            foreach (var app in applications)
-        //            {
-        //                var certificates = _customercertificates
-        //                    .Find(x => x.Fk_Customer_Application == app.Id && x.Is_Delete == false)
-        //                    .ToList();
-
-        //                foreach (var cert in certificates)
-        //                {
-        //                    var masterCert = _masterCertificate.Find(x => x.Id == cert.Fk_Certificates).FirstOrDefault();
-        //                    if (masterCert != null)
-        //                    {
-        //                        var dashboardRecord = new CustomerDashboardData
-        //                        {
-        //                            Id = app.Id,
-        //                            ApplicationId = app.ApplicationId,
-        //                            Certification_Name = masterCert.Certificate_Name,
-        //                            Status = app.status,
-
-        //                        };
-
-        //                        dashboardList.Add(dashboardRecord);
-        //                    }
-        //                }
-        //                var pendingDocs = new List<pendingDocumentList>
-        //                {
-        //                    new pendingDocumentList
-        //                    {
-        //                        DocumentName = "Document 1",
-        //                        ApplicationName = "Iso Application",
-        //                        DocumentCreatedDate = DateTime.Now
-        //                    },
-        //                    new pendingDocumentList
-        //                    {
-        //                        DocumentName = "Process Flow",
-        //                        ApplicationName = "ICMED",
-        //                        DocumentCreatedDate = DateTime.Now
-        //                    },
-        //                    new pendingDocumentList
-        //                    {
-        //                        DocumentName = "Personnel",
-        //                        ApplicationName = "FSSC",
-        //                        DocumentCreatedDate = DateTime.Now
-        //                    },
-        //                    new pendingDocumentList
-        //                    {
-        //                        DocumentName = "Site Add Wrong",
-        //                        ApplicationName = "ISO",
-        //                        DocumentCreatedDate = DateTime.Now
-        //                    }
-        //                };
-        //            }
-
-        //            response.Data = dashboardList;
-        //            response.Message = "Dashboard fetched successfully.";
-        //            response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-        //            response.Success = true;
-        //            response.ResponseCode = 0;
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            response.Message = "GetCustomerDashboard Exception: " + ex.Message;
-        //            response.Success = false;
-        //            response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
-        //            response.ResponseCode = 1;
-        //        }
-        //    }
-        //    else
-        //    {
-        //        response.Message = "Invalid Token.";
-        //        response.Success = false;
-        //        response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
-        //        response.ResponseCode = 1;
-        //    }
-
-        //    return response;
-        //}
-
-
+        
 
         public getCustomerApplicationResponse GetCustomerApplication(getCustomerApplicationRequest request)
         {
@@ -784,20 +1071,41 @@ namespace ZenithApp.ZenithRepository
                         Datetime = app.Datetime,
                         Designation = app.Designation,
                         Fk_Annaxture = app.Fk_Annaxture,
+                        OutsourceProcess = app.OutsourceProcess ?? new List<OutsourceProcessItem>(),
+
 
                         ApplicationCertificates = _customercertificates
                             .Find(x => x.Fk_Customer_Application == app.Id && x.CertificateType == "Regular" && x.Is_Delete == false)
                             .ToList()
-                            .Select(cert => _masterCertificate.Find(mc => mc.Id == cert.Fk_Certificates).FirstOrDefault()?.Certificate_Name)
-                            .Where(name => !string.IsNullOrEmpty(name))
+                            .Select(cert =>
+                            {
+                                var masterCert = _masterCertificate.Find(mc => mc.Id == cert.Fk_Certificates).FirstOrDefault();
+                                return masterCert != null ? new CertificateDto
+                                {
+                                    Id = masterCert.Id,
+                                    Name = masterCert.Certificate_Name
+                                } : null;
+                            })
+                            .Where(x => x != null)
                             .ToList(),
+
+
 
                         ProductCertificates = _customercertificates
                             .Find(x => x.Fk_Customer_Application == app.Id && x.CertificateType == "Product" && x.Is_Delete == false)
                             .ToList()
-                            .Select(cert => _masterCertificate.Find(mc => mc.Id == cert.Fk_Certificates).FirstOrDefault()?.Certificate_Name)
-                            .Where(name => !string.IsNullOrEmpty(name))
+                            .Select(cert =>
+                            {
+                                var masterCert = _masterCertificate.Find(mc => mc.Id == cert.Fk_Certificates).FirstOrDefault();
+                                return masterCert != null ? new CertificateDto
+                                {
+                                    Id = masterCert.Id,
+                                    Name = masterCert.Certificate_Name
+                                } : null;
+                            })
+                            .Where(x => x != null)
                             .ToList(),
+
 
                         KeyPersonnels = _customerKeyPersonnel
                             .Find(x => x.Fk_Customer_Application == app.Id && x.Is_Delete == false)
