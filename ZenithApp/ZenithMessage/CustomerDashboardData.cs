@@ -10,7 +10,7 @@
         public string? Status { get; set; }
         public DateTime? ReceiveDate { get; set; }
         public string? AssignedUserName { get; set; }
-        //public List<UserDropdownDto>? UserList { get; set; } // for dropdown when not assigned
+        
 
 
 
