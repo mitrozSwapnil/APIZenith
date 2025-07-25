@@ -23,9 +23,9 @@
         public List<LabelValue> Sample_Site { get; set; }
         public List<LabelValue> Shift_Details { get; set; }
        public List<ReviewerSiteDetails> CustomerSites { get; set; } = new List<ReviewerSiteDetails>();
-        public List<KeyPersonnelList> KeyPersonnels { get; set; } = new List<KeyPersonnelList>();
+        public List<ReviewerKeyPersonnelList> KeyPersonnels { get; set; } = new List<ReviewerKeyPersonnelList>();
         public List<ReviewerAuditMandaysList> MandaysLists { get; set; } = new List<ReviewerAuditMandaysList>();
-        public List<ThreatList> ThreatLists { get; set; } = new List<ThreatList>();
-        public List<RemarkList> RemarkLists { get; set; } = new List<RemarkList>();
+        public List<ReviewerThreatList> ThreatLists { get; set; } = new List<ReviewerThreatList>();
+        public List<ReviewerRemarkList> RemarkLists { get; set; } = new List<ReviewerRemarkList>();
     }
 }
