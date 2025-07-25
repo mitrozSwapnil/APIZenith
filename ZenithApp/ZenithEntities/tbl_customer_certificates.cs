@@ -15,6 +15,7 @@ namespace ZenithApp.ZenithEntities
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Fk_Certificates{ get; set; }
         public string? CertificateType{ get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
         public string? status { get; set; }
 
         public bool? Is_Delete{ get; set; }
