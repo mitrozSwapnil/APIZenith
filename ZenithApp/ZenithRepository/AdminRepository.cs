@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using System.Runtime.ConstrainedExecution;
+using System.Threading;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
@@ -20,6 +21,11 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_customer_Entity> _customerentity;
         private readonly IMongoCollection<tbl_ISO_Application> _isoApplication;
         private readonly IMongoCollection<tbl_Reviewer_Audit_ManDays> _reviewerAuditManDays;
+        private readonly IMongoCollection<tbl_Application_Remark> _remark;
+        private readonly IMongoCollection<tbl_Application_Threat> _threat;
+        private readonly IMongoCollection<tbl_Master_Threat> _masterthreat;
+        private readonly IMongoCollection<tbl_Master_Remark> _masterremark;
+        private readonly IMongoCollection<tbl_ISO_Application> _iso;
 
 
 
@@ -40,6 +46,10 @@ namespace ZenithApp.ZenithRepository
             _status = database.GetCollection<tbl_Status>("tbl_Status");
             _isoApplication = database.GetCollection<tbl_ISO_Application>("tbl_ISO_Application");
             _reviewerAuditManDays = database.GetCollection<tbl_Reviewer_Audit_ManDays>("tbl_reviewer_audit_mandays");
+            _remark = database.GetCollection<tbl_Application_Remark>("tbl_Application_Remark");
+            _threat = database.GetCollection<tbl_Application_Threat>("tbl_Application_Threat");
+            _masterthreat = database.GetCollection<tbl_Master_Threat>("tbl_Master_Threat");
+            _iso = database.GetCollection<tbl_ISO_Application>("tbl_ISO_Application");
             _acc = acc;
         }
         // Add methods for admin functionalities here
@@ -136,7 +146,7 @@ namespace ZenithApp.ZenithRepository
                                     Certification_Name = masterCert.Certificate_Name,
                                     Certification_Id = masterCert.Id,
                                     Status = (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
-                                    AssignedUserName = assignedUser?.FullName,
+                                    AssignedUserName = assignedUser?.Id,
                                 };
 
                                 dashboardList.Add(dashboardRecord);
@@ -466,6 +476,218 @@ namespace ZenithApp.ZenithRepository
             }
             return response;
         }
+
+
+
+        public async Task<assignUserResponse> AssignReviewerToApplication(assignUserRequest request)
+        {
+            var response = new assignUserResponse();
+
+            var userId = _acc.HttpContext?.Session.GetString("UserId");
+            var userFkRole = (await _user.Find(x => x.Id == userId).FirstOrDefaultAsync())?.Fk_RoleID;
+            var usertype = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+
+            if (usertype?.Trim().ToLower() == "admin")
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(request.UserId) && !string.IsNullOrWhiteSpace(request.ApplicationId))
+                    {
+                        var application = await _isoApplication.Find(x => x.Id == request.ApplicationId).FirstOrDefaultAsync();
+                        if (application != null)
+                        {
+                            var masterCert = await _masterCertificate
+                                .Find(x => x.Id == request.Certification_Id)
+                                .FirstOrDefaultAsync();
+
+                            switch (masterCert.Certificate_Name)
+                            {
+                                case "ISO":
+                                    await _isoApplication.InsertOneAsync(new tbl_ISO_Application
+                                    {
+                                        Application_Received_date = application.Application_Received_date,
+                                        Orgnization_Name = application.Orgnization_Name,
+                                        Constituation_of_Orgnization = application.Constituation_of_Orgnization,
+                                        Fk_Certificate = application.Fk_Certificate,
+                                        AssignTo = application.AssignTo,
+                                        Audit_Type = application.Audit_Type,
+                                        Scop_of_Certification = application.Scop_of_Certification,
+                                        Availbility_of_TechnicalAreas = application.Availbility_of_TechnicalAreas,
+                                        Availbility_of_Auditor = application.Availbility_of_Auditor,
+                                        Audit_Lang = application.Audit_Lang,
+                                        ActiveState = application.ActiveState ?? 1,
+                                        IsInterpreter = application.IsInterpreter,
+                                        IsMultisitesampling = application.IsMultisitesampling,
+                                        Total_site = application.Total_site,
+                                        Sample_Site = application.Sample_Site ?? new List<LabelValue>(),
+                                        Shift_Details = application.Shift_Details ?? new List<LabelValue>(),
+                                        Status = "68835335b8054bb3d2914cae",
+                                        Application_Status = "68835335b8054bb3d2914cae",
+                                        IsDelete = application.IsDelete ?? false,
+                                        IsFinalSubmit = false,
+                                        Fk_UserId = request.UserId,
+                                        Technical_Areas = application.Technical_Areas ?? new List<TechnicalAreasList>(),
+                                        Accreditations = application.Accreditations ?? new List<AccreditationsList>(),
+                                        CustomerSites = application.CustomerSites ?? new List<ReviewerSiteDetails>(),
+                                        reviewerKeyPersonnel = application.reviewerKeyPersonnel ?? new List<ReviewerKeyPersonnelList>(),
+                                        MandaysLists = application.MandaysLists ?? new List<ReviewerAuditMandaysList>(),
+                                        ReviewerThreatList = application.ReviewerThreatList ?? new List<ReviewerThreatList>(),
+                                        ReviewerRemarkList = application.ReviewerRemarkList ?? new List<ReviewerRemarkList>(),
+                                        CreatedAt = DateTime.Now,
+                                        CreatedBy = request.UserId
+                                    });
+
+                                break;
+                            }
+
+
+                            response.Message = "Application assigned successfully.";
+                            response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                            response.Success = true;
+                            response.ResponseCode = 0;
+                        }
+                        else
+                        {
+                            response.Message = "Application not found.";
+                            response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                            response.Success = false;
+                            response.ResponseCode = 1;
+                        }
+                    }
+                    else
+                    {
+                        response.Message = "Please Provide Correct  Application data.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                        response.Success = false;
+                        response.ResponseCode = 1;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Message = "GetCustomerDashboard Exception: " + ex.Message;
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+                    response.ResponseCode = 1;
+                }
+            }
+            else
+            {
+                response.Message = "Invalid Token.";
+                response.Success = false;
+                response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                response.ResponseCode = 1;
+            }
+
+            return response;
+        }
+
+        public getReviewerApplicationResponse GetReviewerApplication(getReviewerApplicationRequest request)
+        {
+            getReviewerApplicationResponse response = new getReviewerApplicationResponse();
+            try
+            {
+                var UserId = _acc.HttpContext?.Session.GetString("UserId");
+                var userFkRole = _user.Find(x => x.Id == UserId).FirstOrDefault()?.Fk_RoleID;
+                var userType = _role.Find(x => x.Id == userFkRole).FirstOrDefault()?.roleName;
+
+                if (userType?.Trim().ToLower() == "admin")
+                {
+                    if (string.IsNullOrWhiteSpace(request.applicationId))
+                    {
+                        response.Message = "ApplicationId is required.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                        response.Success = false;
+                        response.ResponseCode = 1;
+                        return response;
+                    }
+
+                    var Fkcertificate = _iso
+                        .Find(x => x.Id == request.applicationId && x.IsDelete == false)
+                        .FirstOrDefault().Fk_Certificate;
+                    var nameofcertificate = _masterCertificate
+                        .Find(x => x.Id == Fkcertificate && x.Is_Delete == false)
+                        .FirstOrDefault()?.Certificate_Name;
+
+                    var app = _iso
+                        .Find(x => x.ApplicationId == nameofcertificate && x.IsDelete == false)
+                        .SortByDescending(x => x.CreatedAt)
+                        .FirstOrDefault();
+
+                    //var status = _status
+                    //    .Find(x => x.Id == app.Status && x.IsDelete == false)
+                    //    .FirstOrDefault().StatusName;
+
+                    if (app == null)
+                    {
+                        response.Message = "No data found for the given ApplicationId.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                        response.Success = false;
+                        response.ResponseCode = 1;
+                        return response;
+                    }
+
+
+                    var result = new ReviewerApplicationData
+                    {
+                        Id = app.Id,
+                        ApplicationId = app.ApplicationId,
+                        Orgnization_Name = app.Orgnization_Name,
+                        Application_Received_date = app.Application_Received_date,
+                        Constituation_of_Orgnization = app.Constituation_of_Orgnization,
+                        Certification_Name = _masterCertificate
+                            .Find(x => x.Id == app.Fk_Certificate && x.Is_Delete == false)
+                            .FirstOrDefault()?.Certificate_Name,
+                        Audit_Type = app.Audit_Type,
+                        Scop_Of_Certification = app.Scop_of_Certification,
+                        Technical_Areas = app.Technical_Areas,
+                        Accreditations = app.Accreditations,
+                        Availbility_of_TechnicalAreas = app.Availbility_of_TechnicalAreas,
+                        Availbility_of_Auditor = app.Availbility_of_Auditor,
+                        Audit_Lang = app.Audit_Lang,
+                        Is_Interpreter = app.IsInterpreter,
+                        Is_Multisite_Sampling = app.IsMultisitesampling,
+                        Total_Site = app.Total_site,
+                        Sample_Site = app.Sample_Site,
+                        Shift_Details = app.Shift_Details,
+                        status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
+                        AssignUser = app.Fk_UserId,
+                        CustomerSites = app.CustomerSites,
+                        KeyPersonnels = app.reviewerKeyPersonnel,
+                        MandaysLists = app.MandaysLists,
+                        ThreatLists = app.ReviewerThreatList,
+                        RemarkLists = app.ReviewerRemarkList
+                    };
+
+
+
+                    response.Data = new List<ReviewerApplicationData> { result };
+                    response.Message = "Data fetched successfully.";
+                    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                    response.Success = true;
+                    response.ResponseCode = 0;
+
+
+
+                }
+                else
+                {
+                    response.Message = "Invalid token.";
+                    response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                    response.Success = false;
+                    response.ResponseCode = 1;
+                }
+            }
+            catch (Exception ex)
+            {
+                response.Message = "GetCustomerApplication Exception: " + ex.Message;
+                response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+                response.Success = false;
+                response.ResponseCode = 1;
+            }
+
+            return response;
+        }
+
 
         protected override void Disposing()
         {
