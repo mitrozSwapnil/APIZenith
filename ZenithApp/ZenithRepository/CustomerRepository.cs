@@ -20,6 +20,8 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_customer_site> _customersite;
         private readonly IMongoCollection<tbl_customer_Entity> _customerentity;
         private readonly IMongoCollection<tbl_master_certificates> _mastercertificate;
+        private readonly IMongoCollection<tbl_Status> _status;
+
 
 
 
@@ -38,6 +40,10 @@ namespace ZenithApp.ZenithRepository
             _customersite = database.GetCollection<tbl_customer_site>("tbl_customer_site");
             _customerentity = database.GetCollection<tbl_customer_Entity>("tbl_customer_Entity");
             _mastercertificate = database.GetCollection<tbl_master_certificates>("tbl_master_certificates");
+            _status = database.GetCollection<tbl_Status>("tbl_Status");
+
+
+
 
             _acc = acc;
         }
@@ -113,9 +119,12 @@ namespace ZenithApp.ZenithRepository
                             {
                                 Id = app.Id,
                                 ApplicationId = app.ApplicationId,
+                                Certification_Id = masterCert.Id,
                                 Certification_Name = masterCert.Certificate_Name,
-                                Status = app.status ?? "Pending",
-
+                                Status = _status
+                                    .Find(x => x.Id == app.status)
+                                    .FirstOrDefault()?.StatusName ?? "Pending",
+                                IsFinal = app.IsFinalSubmit,
                                 ReceiveDate = app.CreatedAt
                             });
                         }
@@ -181,36 +190,29 @@ namespace ZenithApp.ZenithRepository
 
 
                 var applications = _customer
-                    .Find(x => x.IsDelete == false)
-                    .ToList();
+                     .Find(x => x.IsDelete == false && x.CreatedBy == userId)
+                     .ToList();
+
 
                 var dashboardList = new List<CustomerDashboardData>();
 
                 foreach (var app in applications)
                 {
-                    var certificates = _customercertificates
-                        .Find(x => x.Fk_Customer_Application == app.Id && x.Is_Delete == false)
-                        .ToList();
+                    var certificateCount = await _customercertificates
+                          .CountDocumentsAsync(x => x.Fk_Customer_Application == app.Id && x.Is_Delete == false);
 
-                    foreach (var cert in certificates)
+                    dashboardList.Add(new CustomerDashboardData
                     {
-                        var masterCert = _masterCertificate
-                            .Find(x => x.Id == cert.Fk_Certificates)
-                            .FirstOrDefault();
+                        Id = app.Id,
+                        ApplicationId = app.ApplicationId,
+                        Status = _status
+                                    .Find(x => x.Id == app.status)
+                                    .FirstOrDefault()?.StatusName ?? "Pending",
+                        ReceiveDate = app.CreatedAt,
+                        IsFinal = app.IsFinalSubmit,
+                        CertificateCount = certificateCount
+                    });
 
-                        if (masterCert != null)
-                        {
-                            dashboardList.Add(new CustomerDashboardData
-                            {
-                                Id = app.Id,
-                                ApplicationId = app.ApplicationId,
-                                Certification_Name = masterCert.Certificate_Name,
-                                 Status = app.status ?? "Pending",
-
-                                ReceiveDate = app.CreatedAt
-                            });
-                        }
-                    }
                 }
 
 
@@ -233,8 +235,15 @@ namespace ZenithApp.ZenithRepository
                     .Skip(skip)
                     .Take(request.PageSize)
                     .ToList();
+
+                var pagination = new PageinationDto
+                {
+                    PageNumber = request.PageNumber,       // e.g., 1
+                    PageSize = request.PageSize,           // e.g., 10
+                    TotalRecords = totalCount    // e.g., 135
+                };
                 response.Data = paginatedList;
-                response.TotalRecords = totalCount;
+                response.Pagination = pagination;
                 response.Message = "Dashboard fetched successfully.";
                 response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                 response.Success = true;
@@ -287,6 +296,7 @@ namespace ZenithApp.ZenithRepository
 
                     bool? isFinalSubmit = null;
                     DateTime? submitDate = null;
+                    string status = "687a2925694d00158c9bf269";
 
                     // If user provided isFinalSubmit flag
                     if (!string.IsNullOrWhiteSpace(request.isFinalSubmit))
@@ -296,6 +306,7 @@ namespace ZenithApp.ZenithRepository
                         if (isFinalSubmit == true)
                         {
                             submitDate = DateTime.Now;
+                            status = "687a2925694d00158c9bf264"; // Final Submit status
 
                         }
                     }
@@ -320,7 +331,7 @@ namespace ZenithApp.ZenithRepository
                                 .Set(x => x.ActiveState, request.ActiveStep ?? existingApplication.ActiveState)
                                 .Set(x => x.IsFinalSubmit, isFinalSubmit)
                                 .Set(x => x.SubmitDate, submitDate ?? existingApplication.SubmitDate)
-                                .Set(x => x.status, "687a2925694d00158c9bf265")
+                                .Set(x => x.status, status)
                                 .Set(x => x.UpdatedAt, DateTime.Now)
                                 .Set(x => x.UpdatedBy, UserId);
 
@@ -403,7 +414,8 @@ namespace ZenithApp.ZenithRepository
                                         {
                                             var updateCert = Builders<tbl_customer_certificates>.Update
                                                 .Set(x => x.UpdatedAt, DateTime.Now)
-                                                .Set(x => x.UpdatedBy, UserId);
+                                                .Set(x => x.UpdatedBy, UserId)
+                                                .Set(x => x.status, status);
                                             _customercertificates.UpdateOne(x => x.Id == existingCert.Id, updateCert);
                                         }
                                         else
@@ -418,7 +430,7 @@ namespace ZenithApp.ZenithRepository
                                                 CreatedBy = UserId,
                                                 UpdatedBy = UserId,
                                                 Is_Delete = false,
-                                                status = "Pending"
+                                                status = status,
                                             };
                                             _customercertificates.InsertOne(customerCertificate);
                                         }
@@ -469,30 +481,21 @@ namespace ZenithApp.ZenithRepository
 
                             if (request.Fk_Product_Certificates?.Any() == true)
                             {
-                                var submittedProductCertNames = request.Fk_Product_Certificates
-                                    .Select(x => x.Trim())
-                                    .ToList();
+                                var submittedCertIds = request.Fk_Product_Certificates;
 
-                                // 1. Get all existing Product certs for this application
-                                var existingProductCerts = _customercertificates.Find(x =>
+                                // 1. Get all existing certs of this application (type = Regular)
+                                var existingCerts = _customercertificates.Find(x =>
                                     x.Fk_Customer_Application == existingApplication.Id &&
                                     x.CertificateType == "Product" &&
                                     x.Is_Delete == false
                                 ).ToList();
 
-                                // 2. Get master certs of all submitted product cert names
-                                var submittedMasterCerts = _masterCertificate.Find(x =>
-                                    submittedProductCertNames.Contains(x.Certificate_Name.Trim())
-                                ).ToList();
-
-                                var submittedMasterCertIds = submittedMasterCerts.Select(x => x.Id).ToList();
-
-                                // 3. Soft delete product certs that are no longer in the new list
-                                var toDelete = existingProductCerts
-                                    .Where(x => !submittedMasterCertIds.Contains(x.Fk_Certificates))
+                                // 2. Soft-delete certs that are no longer in the new submitted list
+                                var toDeleteCerts = existingCerts
+                                    .Where(x => !submittedCertIds.Contains(x.Fk_Certificates))
                                     .ToList();
 
-                                foreach (var cert in toDelete)
+                                foreach (var cert in toDeleteCerts)
                                 {
                                     var update = Builders<tbl_customer_certificates>.Update
                                         .Set(x => x.Is_Delete, true)
@@ -501,34 +504,39 @@ namespace ZenithApp.ZenithRepository
                                     _customercertificates.UpdateOne(x => x.Id == cert.Id, update);
                                 }
 
-                                // 4. Add/update submitted certs
-                                foreach (var masterCert in submittedMasterCerts)
+                                // 3. Insert or update submitted certs
+                                foreach (var certId in submittedCertIds)
                                 {
-                                    var existingCert = existingProductCerts
-                                        .FirstOrDefault(x => x.Fk_Certificates == masterCert.Id);
+                                    var masterCert = _masterCertificate.Find(x => x.Id == certId).FirstOrDefault();
 
-                                    if (existingCert != null)
+                                    if (masterCert != null)
                                     {
-                                        var update = Builders<tbl_customer_certificates>.Update
-                                            .Set(x => x.UpdatedAt, DateTime.Now)
-                                            .Set(x => x.UpdatedBy, UserId);
-                                        _customercertificates.UpdateOne(x => x.Id == existingCert.Id, update);
-                                    }
-                                    else
-                                    {
-                                        var newProductCert = new tbl_customer_certificates
+                                        var existingCert = existingCerts.FirstOrDefault(x => x.Fk_Certificates == masterCert.Id);
+
+                                        if (existingCert != null)
                                         {
-                                            Fk_Customer_Application = existingApplication.Id,
-                                            Fk_Certificates = masterCert.Id,
-                                            CertificateType = "Product",
-                                            CreatedAt = DateTime.Now,
-                                            UpdatedAt = DateTime.Now,
-                                            CreatedBy = UserId,
-                                            UpdatedBy = UserId,
-                                            Is_Delete = false,
-                                            status = "Pending"
-                                        };
-                                        _customercertificates.InsertOne(newProductCert);
+                                            var updateCert = Builders<tbl_customer_certificates>.Update
+                                                .Set(x => x.UpdatedAt, DateTime.Now)
+                                                .Set(x => x.UpdatedBy, UserId)
+                                                .Set(x => x.status, status);
+                                            _customercertificates.UpdateOne(x => x.Id == existingCert.Id, updateCert);
+                                        }
+                                        else
+                                        {
+                                            var customerCertificate = new tbl_customer_certificates
+                                            {
+                                                Fk_Customer_Application = existingApplication.Id,
+                                                Fk_Certificates = masterCert.Id,
+                                                CertificateType = "Product",
+                                                CreatedAt = DateTime.Now,
+                                                UpdatedAt = DateTime.Now,
+                                                CreatedBy = UserId,
+                                                UpdatedBy = UserId,
+                                                Is_Delete = false,
+                                                status = status,
+                                            };
+                                            _customercertificates.InsertOne(customerCertificate);
+                                        }
                                     }
                                 }
                             }
@@ -1356,7 +1364,7 @@ namespace ZenithApp.ZenithRepository
                     if (request.type.Trim().ToLower() == "userlist")
                     {
                         var userList = await _user
-                            .Find(x => x.IsDelete == 0 && x.Fk_RoleID=="686fc4eff41f7edee9b89cd3")
+                            .Find(x => x.IsDelete == 0 && x.Fk_RoleID== "686fc53af41f7edee9b89cd6")
                             .Project(x => new UserDropdownDto
                             {
                                 Id = x.Id,

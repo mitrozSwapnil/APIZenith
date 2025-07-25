@@ -65,31 +65,30 @@ namespace ZenithApp.ZenithRepository
                         response.ResponseCode = 1;
                         return response;
                     }
+
                     var dashboardList = new List<CustomerDashboardData>();
 
-                    // Step 1 — Prepare default filter
+                    // Step 1 — Prepare default application filter (no status filter here)
                     var applicationFilter = Builders<tbl_customer_application>.Filter.And(
                         Builders<tbl_customer_application>.Filter.Eq(x => x.IsDelete, false),
                         Builders<tbl_customer_application>.Filter.Eq(x => x.IsFinalSubmit, true)
                     );
 
-                    // Step 2 — If Flag is provided, find StatusId first
+                    // Step 2 — Fetch all applications
+                    var applications = await _customer.Find(applicationFilter).ToListAsync();
+
+                    // Step 3 — Optional: Find status record once if flag is provided
+                    tbl_Status? statusRecord = null;
+                    bool filterByStatus = false;
+
                     if (!string.IsNullOrWhiteSpace(request.Flag))
                     {
-                        var statusRecord = await _status
+                        statusRecord = await _status
                             .Find(x => x.StatusName.ToLower() == request.Flag.Trim().ToLower())
                             .FirstOrDefaultAsync();
 
-                        if (statusRecord != null)
+                        if (statusRecord == null)
                         {
-                            applicationFilter = Builders<tbl_customer_application>.Filter.And(
-                                applicationFilter,
-                                Builders<tbl_customer_application>.Filter.Eq(x => x.status, statusRecord.Id)
-                            );
-                        }
-                        else
-                        {
-                            // Optional: If no status found, return empty result
                             return new getDashboardResponse
                             {
                                 Success = true,
@@ -98,13 +97,11 @@ namespace ZenithApp.ZenithRepository
                                 HttpStatusCode = System.Net.HttpStatusCode.OK
                             };
                         }
+
+                        filterByStatus = true;
                     }
 
-                    // Step 3 — Fetch applications
-                    var applications = await _customer.Find(applicationFilter).ToListAsync();
-
-
-
+                    // Step 4 — Loop over each application and its certificates
                     foreach (var app in applications)
                     {
                         var certificates = await _customercertificates
@@ -113,6 +110,12 @@ namespace ZenithApp.ZenithRepository
 
                         foreach (var cert in certificates)
                         {
+                            // Apply status filter at certificate level only if a flag was provided
+                            if (filterByStatus && cert.status != statusRecord.Id)
+                            {
+                                continue; // Skip this certificate
+                            }
+
                             var masterCert = await _masterCertificate
                                 .Find(x => x.Id == cert.Fk_Certificates)
                                 .FirstOrDefaultAsync();
@@ -121,7 +124,7 @@ namespace ZenithApp.ZenithRepository
                             {
                                 var assignedUser = !string.IsNullOrWhiteSpace(cert.AssignTo)
                                     ? await _user.Find(x => x.Id == cert.AssignTo && x.IsDelete == 0)
-                                            .FirstOrDefaultAsync()
+                                        .FirstOrDefaultAsync()
                                     : null;
 
                                 var dashboardRecord = new CustomerDashboardData
@@ -131,16 +134,17 @@ namespace ZenithApp.ZenithRepository
                                     ReceiveDate = app.SubmitDate,
                                     CompanyName = app.Orgnization_Name,
                                     Certification_Name = masterCert.Certificate_Name,
-                                    Certification_Id= masterCert.Id,
-                                    Status = app.status,
+                                    Certification_Id = masterCert.Id,
+                                    Status = (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
                                     AssignedUserName = assignedUser?.FullName,
-                                    
                                 };
 
                                 dashboardList.Add(dashboardRecord);
                             }
                         }
                     }
+
+                    // Step 5 — Search filter (optional)
                     if (!string.IsNullOrWhiteSpace(request.SearchTerm))
                     {
                         var searchTerm = request.SearchTerm.Trim().ToLower();
@@ -152,7 +156,7 @@ namespace ZenithApp.ZenithRepository
                             .ToList();
                     }
 
-
+                    // Step 6 — Pagination
                     var totalCount = dashboardList.Count;
                     var skip = (request.PageNumber - 1) * request.PageSize;
 
@@ -161,13 +165,21 @@ namespace ZenithApp.ZenithRepository
                         .Take(request.PageSize)
                         .ToList();
 
-                    response.Data = dashboardList;
+                    var pagination = new PageinationDto
+                    {
+                        PageNumber = request.PageNumber,
+                        PageSize = request.PageSize,
+                        TotalRecords = totalCount
+                    };
 
-                    response.TotalRecords = totalCount;
-                    response.Message = "Dashboard fetched successfully.";
+                    // Step 7 — Final response
+                    response.Data = paginatedList;
+                    response.Pagination = pagination;
+                    response.Message = "Dashboard Data fetched successfully.";
                     response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                     response.Success = true;
                     response.ResponseCode = 0;
+
                 }
                 catch (Exception ex)
                 {
@@ -209,7 +221,7 @@ namespace ZenithApp.ZenithRepository
                             application.AssignTo = request.UserId;
                             application.UpdatedAt = DateTime.Now; // Update the timestamp
                             application.UpdatedBy = userId; // Set the user who updated
-                            var status = await _status.Find(x => x.StatusName == "AssignToReviewer" && x.IsDelete == false).FirstOrDefaultAsync();
+                            var status = await _status.Find(x => x.StatusName == "InProgress" && x.IsDelete == false).FirstOrDefaultAsync();
                             if (status != null)
                             {
                                 application.status = status.Id;
@@ -227,7 +239,7 @@ namespace ZenithApp.ZenithRepository
                                     .Find(x => x.Fk_Customer_Application == customerapp.Id && x.Is_Delete == false)
                                     .ToListAsync();
 
-                                var customerSiteDetailsList = siteList.Select(site => new CustomerSiteDetails
+                                var customerSiteDetailsList = siteList.Select(site => new ReviewerSiteDetails
                                 {
                                     Customer_SiteId = site.Id,
                                     Address = site.Address,
@@ -290,8 +302,8 @@ namespace ZenithApp.ZenithRepository
                                             Audit_Type = "",  // Set based on logic or request
                                             Scop_of_Certification = "",
 
-                                            Technical_Areas = new List<string>(),
-                                            Accreditations = new List<string>(),
+                                            Technical_Areas = new List<TechnicalAreasList>(),
+                                            Accreditations = new List<AccreditationsList>(),
 
                                             Availbility_of_TechnicalAreas = false,
                                             Availbility_of_Auditor = false,
@@ -309,7 +321,8 @@ namespace ZenithApp.ZenithRepository
 
                                             CreatedAt = DateTime.Now,
                                             CreatedBy = userId,
-                                            Application_Status = "Pending",
+                                            Status = status.Id,
+                                            Application_Status = status.Id,
                                             IsDelete = false,
                                             IsFinalSubmit = false,
                                             Fk_UserId = request.UserId
