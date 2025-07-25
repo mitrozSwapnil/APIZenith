@@ -13,6 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<CustomerRepository>();
+builder.Services.AddScoped<QuotationRepository>();
 builder.Services.AddScoped<ReviwerRepository>();
 builder.Services.AddScoped<AdminRepository>();
 builder.Services.AddScoped<MasterRepository>();
