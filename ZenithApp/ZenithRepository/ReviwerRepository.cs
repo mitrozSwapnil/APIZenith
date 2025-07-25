@@ -91,16 +91,46 @@ namespace ZenithApp.ZenithRepository
                                 dashboardList.Add(dashboardRecord);
                             }
                         }
+                        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                        {
+                            var searchTerm = request.SearchTerm.Trim().ToLower();
+                            dashboardList = dashboardList
+                                .Where(x =>
+                                    (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+                                    (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+                                )
+                                .ToList();
+                        }
+
+                        // Step 6 — Pagination
+                        var totalCount = dashboardList.Count;
+                        var skip = (request.PageNumber - 1) * request.PageSize;
+
+                        var paginatedList = dashboardList
+                            .Skip(skip)
+                            .Take(request.PageSize)
+                            .ToList();
+
+                        var pagination = new PageinationDto
+                        {
+                            PageNumber = request.PageNumber,
+                            PageSize = request.PageSize,
+                            TotalRecords = totalCount
+                        };
+
+                        response.Data = dashboardList;
+                        response.Pagination = pagination;
+                        response.Message = "Dashboard fetched successfully.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
                     }
-
-
-
-
-                    response.Data = dashboardList;
-                    response.Message = "Dashboard fetched successfully.";
-                    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                    response.Success = true;
-                    response.ResponseCode = 0;
+                    else
+                    {
+                        response.Message = "Login User Not a ISO Department";
+                        response.Success = false;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                        response.ResponseCode = 1;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -250,106 +280,108 @@ namespace ZenithApp.ZenithRepository
 
 
 
-        //public async Task<commonResponse> SaveReviewerISOApplication(SaveReviewerISOApplicationRequest request)
-        //{
-        //    var response = new commonResponse();
-        //    var UserId = _acc.HttpContext?.Session.GetString("UserId");
-        //    var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
-        //    var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+        public async Task<addReviewerApplicationResponse> SaveISOApplication(addReviewerApplicationRequest request)
+        {
+            var response = new addReviewerApplicationResponse();
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
+            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
+            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
 
-        //    if (userType?.Trim().ToLower() == "reviewer")
-        //    {
-        //        try
-        //        {
-        //            if (string.IsNullOrWhiteSpace(request.ApplicationId))
-        //            {
-        //                response.Message = "ApplicationId is required.";
-        //                response.HttpStatusCode = HttpStatusCode.BadRequest;
-        //                response.Success = false;
-        //                return response;
-        //            }
+            if (userType?.Trim().ToLower() == "reviewer" && department=="ISO")
+            {
+                try
+                {
+                    var now = DateTime.Now;
+                    if (!string.IsNullOrEmpty(request.ApplicationId))
+                    {
 
-        //            var existingApp = await _iso.Find(x => x.ApplicationId == request.ApplicationId && x.IsDelete == false).FirstOrDefaultAsync();
+                        bool? isFinalSubmit = null;
+                        DateTime? submitDate = null;
+                        string status = "687a2925694d00158c9bf265";
 
-        //            if (existingApp != null)
-        //            {
-        //                var updateDef = Builders<tbl_ISO_Application>.Update
-        //                    .Set(x => x.Orgnization_Name, request.Orgnization_Name ?? existingApp.Orgnization_Name)
-        //                    .Set(x => x.Constituation_of_Orgnization, request.Constituation_of_Orgnization ?? existingApp.Constituation_of_Orgnization)
-        //                    .Set(x => x.Audit_Type, request.Audit_Type ?? existingApp.Audit_Type)
-        //                    .Set(x => x.Scop_of_Certification, request.Scop_Of_Certification ?? existingApp.Scop_of_Certification)
-        //                    .Set(x => x.Technical_Areas, request.Technical_Areas ?? existingApp.Technical_Areas)
-        //                    .Set(x => x.Accreditations, request.Accreditations ?? existingApp.Accreditations)
-        //                    .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas ?? existingApp.Availbility_of_TechnicalAreas)
-        //                    .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor ?? existingApp.Availbility_of_Auditor)
-        //                    .Set(x => x.Audit_Lang, request.Audit_Lang ?? existingApp.Audit_Lang)
-        //                    .Set(x => x.IsInterpreter, request.Is_Interpreter ?? existingApp.IsInterpreter)
-        //                    .Set(x => x.IsMultisitesampling, request.Is_Multisite_Sampling ?? existingApp.IsMultisitesampling)
-        //                    .Set(x => x.Total_site, request.Total_Site ?? existingApp.Total_site)
-        //                    .Set(x => x.Sample_Site, request.Sample_Site ?? existingApp.Sample_Site)
-        //                    .Set(x => x.Shift_Details, request.Shift_Details ?? existingApp.Shift_Details)
-        //                    .Set(x => x.UpdatedAt, DateTime.Now)
-        //                    .Set(x => x.UpdatedBy, UserId);
+                        // If user provided isFinalSubmit flag
+                        if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
+                        {
+                            isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
 
-        //                await _iso.UpdateOneAsync(x => x.Id == existingApp.Id, updateDef);
+                            if (isFinalSubmit == true)
+                            {
+                                submitDate = DateTime.Now;
+                                status = "687a2925694d00158c9bf267"; // Final Submit status
 
-        //                // You can also call separate Update/Add logic for child collections like Threats, Remarks, Mandays here...
+                            }
+                        }
+                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.Id);
 
-        //                response.Message = "ISO Application updated successfully.";
-        //            }
-        //            else
-        //            {
-        //                var newApp = new tbl_ISO_Application
-        //                {
-        //                    ApplicationId = request.ApplicationId,
-        //                    Orgnization_Name = request.Orgnization_Name,
-        //                    Constituation_of_Orgnization = request.Constituation_of_Orgnization,
-        //                    Fk_Certificate = request.Fk_Certificate,
-        //                    Audit_Type = request.Audit_Type,
-        //                    Scop_of_Certification = request.Scop_Of_Certification,
-        //                    Technical_Areas = request.Technical_Areas,
-        //                    Accreditations = request.Accreditations,
-        //                    Availbility_of_TechnicalAreas = request.Availbility_of_TechnicalAreas,
-        //                    Availbility_of_Auditor = request.Availbility_of_Auditor,
-        //                    Audit_Lang = request.Audit_Lang,
-        //                    IsInterpreter = request.Is_Interpreter,
-        //                    IsMultisitesampling = request.Is_Multisite_Sampling,
-        //                    Total_site = request.Total_Site,
-        //                    Sample_Site = request.Sample_Site,
-        //                    Shift_Details = request.Shift_Details,
-        //                    CreatedAt = DateTime.Now,
-        //                    CreatedBy = UserId,
-        //                    Application_Status = "InProgress",
-        //                    IsDelete = false,
-        //                    Fk_UserId = UserId
-        //                };
+                        // First, clear the sublists (hard delete)
+                        var clearSubLists = Builders<tbl_ISO_Application>.Update
+                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>());
 
-        //                await _iso.InsertOneAsync(newApp);
+                        await _iso.UpdateOneAsync(filter, clearSubLists);
 
-        //                // You can also call Insert logic for child collections here...
+                        // Then, update all fields including new sublist data
+                        var update = Builders<tbl_ISO_Application>.Update
+                            .Set(x => x.Application_Received_date, request.Application_Received_date)
+                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
+                            .Set(x => x.Constituation_of_Orgnization, request.Constituation_of_Orgnization)
+                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
+                            .Set(x => x.AssignTo, request.AssignTo)
+                            .Set(x => x.Audit_Type, request.Audit_Type)
+                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
+                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
+                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
+                            .Set(x => x.Audit_Lang, request.Audit_Lang)
+                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
+                            .Set(x => x.IsInterpreter, request.IsInterpreter)
+                            .Set(x => x.IsMultisitesampling, request.IsMultisitesampling)
+                            .Set(x => x.Total_site, request.Total_site)
+                            .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
+                            .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
+                            .Set(x => x.Status, status)
+                            .Set(x => x.Application_Status, status)
+                            .Set(x => x.IsDelete, request.IsDelete ?? false)
+                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
+                            .Set(x => x.Fk_UserId, request.Fk_UserId)
+                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
+                            .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
+                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>())
+                            .Set(x => x.UpdatedAt, now)
+                            .Set(x => x.UpdatedBy, UserId);
 
-        //                response.Message = "ISO Application added successfully.";
-        //            }
+                        await _iso.UpdateOneAsync(filter, update);
 
-        //            response.HttpStatusCode = HttpStatusCode.OK;
-        //            response.Success = true;
-        //        }
-        //        catch (Exception ex)
-        //        {
-        //            response.Message = "SaveReviewerISOApplication Exception: " + ex.Message;
-        //            response.HttpStatusCode = HttpStatusCode.InternalServerError;
-        //            response.Success = false;
-        //        }
-        //    }
-        //    else
-        //    {
-        //        response.Message = "Invalid token.";
-        //        response.HttpStatusCode = HttpStatusCode.Unauthorized;
-        //        response.Success = false;
-        //    }
+                        //response.Data = new List<tbl_ISO_Application> { result };
+                        response.Message = "Data Saved successfully.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Message = "SaveReviewerISOApplication Exception: " + ex.Message;
+                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                    response.Success = false;
+                }
+            }
+            else
+            {
+                response.Message = "Invalid token.";
+                response.HttpStatusCode = HttpStatusCode.Unauthorized;
+                response.Success = false;
+            }
 
-        //    return response;
-        //}
+            return response;
+        }
 
         protected override void Disposing()
         {

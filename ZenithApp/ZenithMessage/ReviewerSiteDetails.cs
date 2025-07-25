@@ -1,11 +1,7 @@
-﻿using MongoDB.Bson.Serialization.Attributes;
-using MongoDB.Bson;
-
-namespace ZenithApp.ZenithMessage
+﻿namespace ZenithApp.ZenithMessage
 {
-    public class CustomerSiteDetails
+    public class ReviewerSiteDetails
     {
-        [BsonRepresentation(BsonType.ObjectId)]
         public string? Customer_SiteId { get; set; }
         public string? SiteName { get; set; }
         public string? Address { get; set; }

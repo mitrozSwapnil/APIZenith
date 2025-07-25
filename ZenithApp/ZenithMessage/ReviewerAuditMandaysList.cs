@@ -5,9 +5,8 @@ namespace ZenithApp.ZenithMessage
 {
     public class ReviewerAuditMandaysList
     {
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string ReviewerAuditMandaysID { get; set; }      // Example: "Initial Certification Audit"
-        public string ActivityName { get; set; }      // Example: "Initial Certification Audit"
+       
+        public string ActivityName { get; set; } 
         public decimal Audit_ManDays { get; set; }
         public decimal Additional_ManDays { get; set; }
 
