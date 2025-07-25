@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using System.Net;
+using System.Runtime.ConstrainedExecution;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
@@ -84,7 +85,7 @@ namespace ZenithApp.ZenithRepository
                                     ApplicationId = app.ApplicationId,
                                     CompanyName = app.Orgnization_Name,
                                     Certification_Name = masterCert.Certificate_Name,
-                                    Status = app.Application_Status,
+                                    Status = (await _status.Find(x => x.Id == app.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
                                     ReceiveDate = app.Application_Received_date,
                                     AssignedUserName = _user.Find(x => x.Id == app.Fk_UserId).FirstOrDefault()?.FullName
                                 };
@@ -118,7 +119,7 @@ namespace ZenithApp.ZenithRepository
                             TotalRecords = totalCount
                         };
 
-                        response.Data = dashboardList;
+                        response.Data = paginatedList;
                         response.Pagination = pagination;
                         response.Message = "Dashboard fetched successfully.";
                         response.HttpStatusCode = System.Net.HttpStatusCode.OK;
@@ -188,10 +189,7 @@ namespace ZenithApp.ZenithRepository
                         response.ResponseCode = 1;
                         return response;
                     }
-                    if (app.Status != null && app.Status == "SendToApprove")
-                    {
-
-                    }
+                    
 
                     var result = new ReviewerApplicationData
                     {
@@ -215,40 +213,15 @@ namespace ZenithApp.ZenithRepository
                         Total_Site = app.Total_site,
                         Sample_Site = app.Sample_Site,
                         Shift_Details = app.Shift_Details,
-                        status = app.Status,
+                        status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
                         AssignUser = app.Fk_UserId,
                         CustomerSites = app.CustomerSites,
-                        KeyPersonnels = app.KeyPersonnels,
+                        KeyPersonnels = app.reviewerKeyPersonnel,
                         MandaysLists = app.MandaysLists,
-                        ThreatLists = _threat
-                            .Find(x => x.Fk_ApplicationId == app.Id)
-                            .ToList()
-                            .Select(entity => new ThreatList
-                            {
-                                ThreatId = entity.Id,
-                                Threar_name = _masterthreat
-                                    .Find(x => x.Id == entity.Fk_MasterThreat && x.Fk_Certificate== "68760495bf2bbf79b436dfaa" )
-                                    .FirstOrDefault()?.Threat_Name,
-                                IsApplicable = entity.IsApplicable,
-                                Comment = entity.Comment
-                            }).ToList(),
+                        ThreatLists = app.ReviewerThreatList,
 
-                        RemarkLists = _remark.Find(x => x.Fk_ApplicationId == app.Id)
-                            .ToList()
-                            .Select(entity => new RemarkList
-                            {
-                                RemarkId = entity.Id,
-                                Remark_Name = _masterremark
-                                    .Find(x => x.Id == entity.Fk_MasterRemark && x.Fk_Certificate == "68760495bf2bbf79b436dfaa")
-                                    .FirstOrDefault()?.Remark_Name,
-
-                                IsApplicable = entity.IsApplicable,
-                                Comment = entity.Comment,
-                                AdditionalRemark = entity.AdditionalRemark
-                            }).ToList()
+                        RemarkLists = app.ReviewerRemarkList
                     };
-
-
 
                     response.Data = new List<ReviewerApplicationData> { result };
                     response.Message = "Data fetched successfully.";

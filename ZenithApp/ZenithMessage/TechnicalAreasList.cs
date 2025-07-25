@@ -5,7 +5,6 @@ namespace ZenithApp.ZenithMessage
 {
     public class TechnicalAreasList
     {
-       
         public string Name { get; set; }
     }
 }
