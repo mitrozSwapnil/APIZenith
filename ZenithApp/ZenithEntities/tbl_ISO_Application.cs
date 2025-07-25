@@ -42,6 +42,8 @@ namespace ZenithApp.ZenithEntities
         public DateTime? UpdatedAt { get; set; }
         public string? CreatedBy { get; set; }
         public string? UpdatedBy { get; set; }
+
+        [BsonRepresentation(BsonType.ObjectId)]
         public string? Status { get; set; }
         public string? Application_Status { get; set; }
         public bool? IsDelete { get; set; }
@@ -49,13 +51,16 @@ namespace ZenithApp.ZenithEntities
 
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Fk_UserId { get; set; }
-        public List<string> Technical_Areas { get; set; } = new List<string>();
-        public List<string> Accreditations { get; set; } = new List<string>();
+        public List<TechnicalAreasList> Technical_Areas { get; set; } = new List<TechnicalAreasList>();
+        public List<AccreditationsList> Accreditations { get; set; } = new List<AccreditationsList>();
 
-        public List<CustomerSiteDetails> CustomerSites { get; set; } = new List<CustomerSiteDetails>();
+        public List<ReviewerSiteDetails> CustomerSites { get; set; } = new List<ReviewerSiteDetails>();
         public List<KeyPersonnelList> KeyPersonnels { get; set; } = new List<KeyPersonnelList>();
+        public List<ReviewerKeyPersonnelList> reviewerKeyPersonnel { get; set; } = new List<ReviewerKeyPersonnelList>();
         public List<ReviewerAuditMandaysList> MandaysLists { get; set; } = new List<ReviewerAuditMandaysList>();
         public List<ThreatList> ThreatLists { get; set; } = new List<ThreatList>();
+        public List<ReviewerThreatList> ReviewerThreatList { get; set; } = new List<ReviewerThreatList>();
+        public List<ReviewerRemarkList> ReviewerRemarkList { get; set; } = new List<ReviewerRemarkList>();
         public List<RemarkList> RemarkLists { get; set; } = new List<RemarkList>();
 
 

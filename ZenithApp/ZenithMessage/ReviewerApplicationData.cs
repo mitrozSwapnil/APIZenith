@@ -10,8 +10,8 @@
         public string? Certification_Name { get; set; }
         public string? Audit_Type { get; set; }
         public string? Scop_Of_Certification { get; set; }
-        public List<string> Technical_Areas { get; set; }
-        public List<string> Accreditations { get; set; }
+        public List<TechnicalAreasList> Technical_Areas { get; set; }
+        public List<AccreditationsList> Accreditations { get; set; }
         public bool? Availbility_of_TechnicalAreas { get; set; }
         public bool? Availbility_of_Auditor { get; set; }
         public string? Audit_Lang { get; set; }
@@ -22,7 +22,7 @@
         public int? Total_Site { get; set; }
         public List<LabelValue> Sample_Site { get; set; }
         public List<LabelValue> Shift_Details { get; set; }
-       public List<CustomerSiteDetails> CustomerSites { get; set; } = new List<CustomerSiteDetails>();
+       public List<ReviewerSiteDetails> CustomerSites { get; set; } = new List<ReviewerSiteDetails>();
         public List<KeyPersonnelList> KeyPersonnels { get; set; } = new List<KeyPersonnelList>();
         public List<ReviewerAuditMandaysList> MandaysLists { get; set; } = new List<ReviewerAuditMandaysList>();
         public List<ThreatList> ThreatLists { get; set; } = new List<ThreatList>();
