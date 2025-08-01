@@ -30,6 +30,26 @@ namespace ZenithApp.Controllers
             return this.ProcessRequest<getDashboardResponse>(model);
         }
 
+        [HttpPost("GetAdminApplication")]
+        public IActionResult GetAdminApplication(getReviewerApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<getReviewerApplicationResponse>(model);
+        }
+
+        [HttpPost("AssignReviewerTwoApplication")]
+        public IActionResult AssignReviewerTwoApplication(assignUserRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<assignUserResponse>(model);
+        }
+
         [HttpPost("AssignApplication")]
         public IActionResult AssignApplication(assignUserRequest model)
         {
@@ -64,6 +84,14 @@ namespace ZenithApp.Controllers
             else if (action == nameof(GetDropdown))
             {
                 return _adminRepository.GetDropdown(request as userDropdownRequest).Result;
+            }
+            else if (action == nameof(GetAdminApplication))
+            {
+                return _adminRepository.GetAdminApplication(request as getReviewerApplicationRequest);
+            }
+            else if (action == nameof(AssignReviewerTwoApplication))
+            {
+                return _adminRepository.AssignReviewerTwoApplication(request as assignUserRequest).Result;
             }
             
 
