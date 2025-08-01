@@ -479,7 +479,7 @@ namespace ZenithApp.ZenithRepository
 
 
 
-        public async Task<assignUserResponse> AssignReviewerToApplication(assignUserRequest request)
+        public async Task<assignUserResponse> AssignReviewerTwoApplication(assignUserRequest request)
         {
             var response = new assignUserResponse();
 
@@ -581,7 +581,7 @@ namespace ZenithApp.ZenithRepository
             return response;
         }
 
-        public getReviewerApplicationResponse GetReviewerApplication(getReviewerApplicationRequest request)
+        public getReviewerApplicationResponse GetAdminApplication(getReviewerApplicationRequest request)
         {
             getReviewerApplicationResponse response = new getReviewerApplicationResponse();
             try
@@ -604,12 +604,13 @@ namespace ZenithApp.ZenithRepository
                     var Fkcertificate = _iso
                         .Find(x => x.Id == request.applicationId && x.IsDelete == false)
                         .FirstOrDefault().Fk_Certificate;
+
                     var nameofcertificate = _masterCertificate
                         .Find(x => x.Id == Fkcertificate && x.Is_Delete == false)
-                        .FirstOrDefault()?.Certificate_Name;
+                        .FirstOrDefault()?.Id;
 
                     var app = _iso
-                        .Find(x => x.ApplicationId == nameofcertificate && x.IsDelete == false)
+                        .Find(x => x.Fk_Certificate == nameofcertificate && x.IsDelete == false)
                         .SortByDescending(x => x.CreatedAt)
                         .FirstOrDefault();
 
