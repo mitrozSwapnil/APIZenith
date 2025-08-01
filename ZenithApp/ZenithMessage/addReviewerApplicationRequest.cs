@@ -3,6 +3,7 @@
     public class addReviewerApplicationRequest:BaseRequest
     {
         public string? Id { get; set; }
+        public string? ApplicationType { get; set; }
         public string? ApplicationId { get; set; }
         public DateTime? Application_Received_date { get; set; }
         public string? Orgnization_Name { get; set; }
