@@ -26,6 +26,7 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_Master_Threat> _masterthreat;
         private readonly IMongoCollection<tbl_Master_Remark> _masterremark;
         private readonly IMongoCollection<tbl_ISO_Application> _iso;
+        private readonly IMongoCollection<tbl_FSSC_Application> _fssc;
 
 
 
@@ -50,6 +51,7 @@ namespace ZenithApp.ZenithRepository
             _threat = database.GetCollection<tbl_Application_Threat>("tbl_Application_Threat");
             _masterthreat = database.GetCollection<tbl_Master_Threat>("tbl_Master_Threat");
             _iso = database.GetCollection<tbl_ISO_Application>("tbl_ISO_Application");
+            _fssc = database.GetCollection<tbl_FSSC_Application>("tbl_FSSC_Application");
             _acc = acc;
         }
         // Add methods for admin functionalities here
@@ -340,6 +342,46 @@ namespace ZenithApp.ZenithRepository
 
                                         break;
 
+
+                                    case "FSSC":
+                                        await _fssc.InsertOneAsync(new tbl_FSSC_Application
+                                        {
+                                            ApplicationId = request.ApplicationId,
+                                            Application_Received_date = DateTime.Now,
+                                            Orgnization_Name = customerapp.Orgnization_Name,
+                                            Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
+                                            Fk_Certificate = application.Fk_Certificates,
+                                            AssignTo = request.UserId,
+                                            Audit_Type = "",  // Set based on logic or request
+                                            Scop_of_Certification = "",
+                                            Technical_Areas = new List<TechnicalAreasList>(),
+                                            Accreditations = new List<AccreditationsList>(),
+                                            categoryLists = new List<CategoryList>(),
+                                            subCategoryLists = new List<SubCategoryList>(),
+                                            Availbility_of_TechnicalAreas = false,
+                                            Availbility_of_Auditor = false,
+                                            Audit_Lang = "",
+                                            IsInterpreter = false,
+                                            IsMultisitesampling = false,
+                                            Seasonality_Factor = "", // Set based on logic or request
+                                            AnyAllergens = "", // Set based on logic or request
+                                            Total_site = customerSiteDetailsList?.Count ?? 0,  // <-- Set site count
+                                            Sample_Site = new List<LabelValue>(),   // If required, fill here
+                                            Shift_Details = new List<LabelValue>(), // If required, fill here
+                                            CustomerSites = customerSiteDetailsList,
+                                            KeyPersonnels = keyPersonnelsList,
+                                            MandaysLists = mandaysList,
+
+                                            CreatedAt = DateTime.Now,
+                                            CreatedBy = userId,
+                                            Status = status.Id,
+                                            IsDelete = false,
+                                            IsFinalSubmit = false,
+                                            Fk_UserId = request.UserId
+
+                                        });
+                                        break;
+
                                     //case "ICMED":
                                     //    await _icmedApplication.InsertOneAsync(new tbl_ICMED_Application
                                     //    {
@@ -349,14 +391,7 @@ namespace ZenithApp.ZenithRepository
                                     //    });
                                     //    break;
 
-                                    //case "FSSC":
-                                    //    await _icmedApplication.InsertOneAsync(new tbl_ICMED_Application
-                                    //    {
-                                    //        ApplicationId = request.ApplicationId,
-                                    //        CreatedAt = DateTime.Now,
-                                    //        // other fields...
-                                    //    });
-                                    //    break;
+
 
                                     //case "Other1":
                                     //    await _other1Application.InsertOneAsync(new tbl_Other1_Application { /*...*/ });

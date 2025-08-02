@@ -56,7 +56,7 @@ namespace ZenithApp.Controllers
             }
             else if (action == nameof(GetReviewerApplication))
             {
-                return _reviwerRepository.GetReviewerApplication(request as getReviewerApplicationRequest);
+                return _reviwerRepository.GetReviewerApplication(request as getReviewerApplicationRequest).Result;
             }
             else if (action == nameof(SaveISOApplication))
             {
