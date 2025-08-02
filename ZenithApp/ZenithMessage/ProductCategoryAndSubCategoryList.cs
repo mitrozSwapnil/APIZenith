@@ -1,9 +1,9 @@
 ﻿namespace ZenithApp.ZenithMessage
 {
-    public class CategoryList
+    public class ProductCategoryAndSubCategoryList
     {
         public string? CategoryId { get; set; }
         public string? CategoryName { get; set; }
-        
+       
     }
 }
