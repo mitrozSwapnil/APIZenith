@@ -267,8 +267,7 @@ namespace ZenithApp.ZenithRepository
                 try
                 {
                     var now = DateTime.Now;
-                    if (request.ApplicationType?.Trim().ToLower() == "ISO")
-                    {
+                    
                         bool? isFinalSubmit = null;
                         DateTime? submitDate = null;
                         string status = "687a2925694d00158c9bf265";
@@ -342,72 +341,8 @@ namespace ZenithApp.ZenithRepository
                             response.Success = true;
                             response.ResponseCode = 0;
                         }
-                    }
-                    else if (request.ApplicationType == "FSSC")
-                    {
-                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.Id);
-
-                        // First, clear the sublists (hard delete)
-                        var clearSubLists = Builders<tbl_ISO_Application>.Update
-                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
-                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
-                            .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
-                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
-                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>());
-
-                        await _iso.UpdateOneAsync(filter, clearSubLists);
-
-                        // Then, update all fields including new sublist data
-                        var update = Builders<tbl_ISO_Application>.Update
-                            .Set(x => x.Application_Received_date, request.Application_Received_date)
-                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
-                            .Set(x => x.Constituation_of_Orgnization, request.Constituation_of_Orgnization)
-                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
-                            .Set(x => x.AssignTo, request.AssignTo)
-                            .Set(x => x.Audit_Type, request.Audit_Type)
-                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
-                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
-                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
-                            .Set(x => x.Audit_Lang, request.Audit_Lang)
-                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
-                            .Set(x => x.IsInterpreter, request.IsInterpreter)
-                            .Set(x => x.IsMultisitesampling, request.IsMultisitesampling)
-                            .Set(x => x.Total_site, request.Total_site)
-                            .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
-                            .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
-                            .Set(x => x.Status, status)
-                            .Set(x => x.Application_Status, status)
-                            .Set(x => x.IsDelete, request.IsDelete ?? false)
-                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
-                            .Set(x => x.Fk_UserId, request.Fk_UserId)
-                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
-                            .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
-                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
-                            .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
-                            .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
-                            .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
-                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>())
-                            .Set(x => x.UpdatedAt, now)
-                            .Set(x => x.UpdatedBy, UserId);
-
-                        await _iso.UpdateOneAsync(filter, update);
-
-                        //response.Data = new List<tbl_ISO_Application> { result };
-                        response.Message = "Data Saved successfully.";
-                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                        response.Success = true;
-                        response.ResponseCode = 0;
-                    }
-                    else if (request.ApplicationType == "ICMED")
-                    {
-
-                    }
-                    else if (request.ApplicationType == "FSSC")
-                    {
-
-                    }
-
-
+                    
+                   
                 }
                 catch (Exception ex)
                 {

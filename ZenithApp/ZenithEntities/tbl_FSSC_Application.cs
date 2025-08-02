@@ -54,7 +54,7 @@ namespace ZenithApp.ZenithEntities
         public List<TechnicalAreasList> Technical_Areas { get; set; } = new List<TechnicalAreasList>();
         public List<AccreditationsList> Accreditations { get; set; } = new List<AccreditationsList>();
         public List<CategoryList> categoryLists { get; set; } = new List<CategoryList>();
-        public List<SubCategoryList> subCategoryLists { get; set; } = new List<SubCategoryList>();
+        //public List<SubCategoryList> subCategoryLists { get; set; } = new List<SubCategoryList>();
 
         public List<ReviewerSiteDetails> CustomerSites { get; set; } = new List<ReviewerSiteDetails>();
         public List<KeyPersonnelList> KeyPersonnels { get; set; } = new List<KeyPersonnelList>();

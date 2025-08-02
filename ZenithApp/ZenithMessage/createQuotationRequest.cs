@@ -8,7 +8,7 @@ namespace ZenithApp.ZenithMessage
         
 
         public string? ApplicationId { get; set; }
-        public string? QuatationId { get; set; }
+      
 
         public string? CertificateType { get; set; }
 
