@@ -30,14 +30,27 @@ namespace ZenithApp.Controllers
             return this.ProcessRequest<createQuotationResponse>(model);
         }
 
-       
+
+        [HttpPost("GetMandaysbyapplicationId")]
+        public IActionResult GetMandaysbyapplicationId(getmandaysbyapplicationIdRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<getCretificationsbyAppIdResponse>(model);
+        }
+
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
             if (action == nameof(CreateQuotation))
             {
                 return _quotationRepository.CreateQuotation(request as createQuotationRequest).Result;
             }
-            
+            else if (action == nameof(GetMandaysbyapplicationId))
+            {
+                return _quotationRepository.GetMandaysbyapplicationId(request as getmandaysbyapplicationIdRequest).Result;
+            }
 
             throw new NotImplementedException();
         }

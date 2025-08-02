@@ -1,7 +1,10 @@
 ﻿using gmkRepositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using MongoDB.Driver;
 using System.Text;
+using ZenithApp.CommonServices;
 using ZenithApp.Services;
 using ZenithApp.Settings;
 using ZenithApp.ZenithRepository;
@@ -18,6 +21,15 @@ builder.Services.AddScoped<ReviwerRepository>();
 builder.Services.AddScoped<AdminRepository>();
 builder.Services.AddScoped<MasterRepository>();
 
+
+builder.Services.AddSingleton<IMongoClient>(sp =>
+{
+    var settings = sp.GetRequiredService<IOptions<MongoDbSettings>>().Value;
+    return new MongoClient(settings.ConnectionString);
+});
+
+// ✅ Register MongoDbService
+builder.Services.AddSingleton<MongoDbService>();
 // Register MongoDB settings
 builder.Services.Configure<MongoDbSettings>(
     builder.Configuration.GetSection("MongoDbSettings"));
@@ -68,6 +80,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddSingleton<StudentService>();
 builder.Services.AddScoped<CustomerApplicationRepository>();
+
 
 builder.Services.AddSingleton<AuthService>();
 builder.Services.AddEndpointsApiExplorer();
