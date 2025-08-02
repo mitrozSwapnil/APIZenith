@@ -25,6 +25,7 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_Master_Threat> _masterthreat;
         private readonly IMongoCollection<tbl_Master_Remark> _masterremark;
 
+        private readonly IMongoCollection<tbl_FSSC_Application> _fssc;
 
 
 
@@ -50,6 +51,9 @@ namespace ZenithApp.ZenithRepository
             _remark = database.GetCollection<tbl_Application_Remark>("tbl_Application_Remark");
             _threat = database.GetCollection<tbl_Application_Threat>("tbl_Application_Threat");
             _masterthreat = database.GetCollection<tbl_Master_Threat>("tbl_Master_Threat");
+            _fssc = database.GetCollection<tbl_FSSC_Application>("tbl_FSSC_Application");
+
+
             _acc = acc;
         }
 
@@ -153,7 +157,7 @@ namespace ZenithApp.ZenithRepository
         }
 
 
-        public getReviewerApplicationResponse GetReviewerApplication(getReviewerApplicationRequest request)
+        public async Task<getReviewerApplicationResponse> GetReviewerApplication(getReviewerApplicationRequest request)
         {
             getReviewerApplicationResponse response = new getReviewerApplicationResponse();
             try
@@ -172,62 +176,93 @@ namespace ZenithApp.ZenithRepository
                         response.ResponseCode = 1;
                         return response;
                     }
-
-                    var app = _iso
-                        .Find(x => x.Id == request.applicationId && x.IsDelete == false)
-                        .FirstOrDefault();
-
-                    //var status = _status
-                    //    .Find(x => x.Id == app.Status && x.IsDelete == false)
-                    //    .FirstOrDefault().StatusName;
-
-                    if (app == null)
+                    if (request.CertificationName == "ISO")
                     {
-                        response.Message = "No data found for the given ApplicationId.";
-                        response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var result = await _iso.Find(filter).FirstOrDefaultAsync();
+                        
+                        response.Data = result;
+                    }
+                    else if (request.CertificationName == "FSSC")
+                    {
+                        var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var result = await _fssc.Find(filter).FirstOrDefaultAsync();
+
+                        response.Data = result;
+                    }
+                    else
+                    {
+                        response.Message = "Invalid Certification Name.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
                         response.Success = false;
                         response.ResponseCode = 1;
                         return response;
                     }
-                    
-
-                    var result = new ReviewerApplicationData
-                    {
-                        Id = app.Id,
-                        ApplicationId = app.ApplicationId,
-                        Orgnization_Name = app.Orgnization_Name,
-                        Application_Received_date = app.Application_Received_date,
-                        Constituation_of_Orgnization = app.Constituation_of_Orgnization,
-                        Certification_Name = _masterCertificate
-                            .Find(x => x.Id == app.Fk_Certificate && x.Is_Delete == false)
-                            .FirstOrDefault()?.Certificate_Name,
-                        Audit_Type = app.Audit_Type,
-                        Scop_Of_Certification = app.Scop_of_Certification,
-                        Technical_Areas = app.Technical_Areas,
-                        Accreditations = app.Accreditations,
-                        Availbility_of_TechnicalAreas = app.Availbility_of_TechnicalAreas,
-                        Availbility_of_Auditor = app.Availbility_of_Auditor,
-                        Audit_Lang = app.Audit_Lang,
-                        Is_Interpreter = app.IsInterpreter,
-                        Is_Multisite_Sampling = app.IsMultisitesampling,
-                        Total_Site = app.Total_site,
-                        Sample_Site = app.Sample_Site,
-                        Shift_Details = app.Shift_Details,
-                        status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
-                        AssignUser = app.Fk_UserId,
-                        CustomerSites = app.CustomerSites,
-                        KeyPersonnels = app.reviewerKeyPersonnel,
-                        MandaysLists = app.MandaysLists,
-                        ThreatLists = app.ReviewerThreatList,
-
-                        RemarkLists = app.ReviewerRemarkList
-                    };
-
-                    response.Data = new List<ReviewerApplicationData> { result };
                     response.Message = "Data fetched successfully.";
-                    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                    response.HttpStatusCode = HttpStatusCode.OK;
                     response.Success = true;
                     response.ResponseCode = 0;
+
+
+
+
+
+
+                    //var app = _iso
+                    //    .Find(x => x.Id == request.applicationId && x.IsDelete == false)
+                    //    .FirstOrDefault();
+
+                    ////var status = _status
+                    ////    .Find(x => x.Id == app.Status && x.IsDelete == false)
+                    ////    .FirstOrDefault().StatusName;
+
+                    //if (app == null)
+                    //{
+                    //    response.Message = "No data found for the given ApplicationId.";
+                    //    response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                    //    response.Success = false;
+                    //    response.ResponseCode = 1;
+                    //    return response;
+                    //}
+                    
+
+                    //var result = new ReviewerApplicationData
+                    //{
+                    //    Id = app.Id,
+                    //    ApplicationId = app.ApplicationId,
+                    //    Orgnization_Name = app.Orgnization_Name,
+                    //    Application_Received_date = app.Application_Received_date,
+                    //    Constituation_of_Orgnization = app.Constituation_of_Orgnization,
+                    //    Certification_Name = _masterCertificate
+                    //        .Find(x => x.Id == app.Fk_Certificate && x.Is_Delete == false)
+                    //        .FirstOrDefault()?.Certificate_Name,
+                    //    Audit_Type = app.Audit_Type,
+                    //    Scop_Of_Certification = app.Scop_of_Certification,
+                    //    Technical_Areas = app.Technical_Areas,
+                    //    Accreditations = app.Accreditations,
+                    //    Availbility_of_TechnicalAreas = app.Availbility_of_TechnicalAreas,
+                    //    Availbility_of_Auditor = app.Availbility_of_Auditor,
+                    //    Audit_Lang = app.Audit_Lang,
+                    //    Is_Interpreter = app.IsInterpreter,
+                    //    Is_Multisite_Sampling = app.IsMultisitesampling,
+                    //    Total_Site = app.Total_site,
+                    //    Sample_Site = app.Sample_Site,
+                    //    Shift_Details = app.Shift_Details,
+                    //    status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
+                    //    AssignUser = app.Fk_UserId,
+                    //    CustomerSites = app.CustomerSites,
+                    //    KeyPersonnels = app.reviewerKeyPersonnel,
+                    //    MandaysLists = app.MandaysLists,
+                    //    ThreatLists = app.ReviewerThreatList,
+
+                    //    RemarkLists = app.ReviewerRemarkList
+                    //};
+
+                    //response.Data = new List<ReviewerApplicationData> { result };
+                    //response.Message = "Data fetched successfully.";
+                    //response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                    //response.Success = true;
+                    //response.ResponseCode = 0;
 
 
 
@@ -341,12 +376,11 @@ namespace ZenithApp.ZenithRepository
                             response.Success = true;
                             response.ResponseCode = 0;
                         }
-                    
-                   
+
                 }
                 catch (Exception ex)
                 {
-                    response.Message = "SaveReviewerISOApplication Exception: " + ex.Message;
+                    response.Message = "SubmitFsscApplication Exception: " + ex.Message;
                     response.HttpStatusCode = HttpStatusCode.InternalServerError;
                     response.Success = false;
                 }
@@ -360,6 +394,105 @@ namespace ZenithApp.ZenithRepository
 
             return response;
         }
+
+
+        //public getFsscResponse GetFSSCApplication(getFsscRequest request)
+        //{
+        //    getFsscResponse response = new getFsscResponse();
+        //    try
+        //    {
+        //        var UserId = _acc.HttpContext?.Session.GetString("UserId");
+        //        var userFkRole = _user.Find(x => x.Id == UserId).FirstOrDefault()?.Fk_RoleID;
+        //        var userType = _role.Find(x => x.Id == userFkRole).FirstOrDefault()?.roleName;
+
+        //        if (userType?.Trim().ToLower() == "reviewer")
+        //        {
+        //            if (string.IsNullOrWhiteSpace(request.applicationId))
+        //            {
+        //                response.Message = "ApplicationId is required.";
+        //                response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+        //                response.Success = false;
+        //                response.ResponseCode = 1;
+        //                return response;
+        //            }
+
+        //            var app = _iso
+        //                .Find(x => x.Id == request.applicationId && x.IsDelete == false)
+        //                .FirstOrDefault();
+
+        //            //var status = _status
+        //            //    .Find(x => x.Id == app.Status && x.IsDelete == false)
+        //            //    .FirstOrDefault().StatusName;
+
+        //            if (app == null)
+        //            {
+        //                response.Message = "No data found for the given ApplicationId.";
+        //                response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+        //                response.Success = false;
+        //                response.ResponseCode = 1;
+        //                return response;
+        //            }
+
+
+        //            var result = new ReviewerApplicationData
+        //            {
+        //                Id = app.Id,
+        //                ApplicationId = app.ApplicationId,
+        //                Orgnization_Name = app.Orgnization_Name,
+        //                Application_Received_date = app.Application_Received_date,
+        //                Constituation_of_Orgnization = app.Constituation_of_Orgnization,
+        //                Certification_Name = _masterCertificate
+        //                    .Find(x => x.Id == app.Fk_Certificate && x.Is_Delete == false)
+        //                    .FirstOrDefault()?.Certificate_Name,
+        //                Audit_Type = app.Audit_Type,
+        //                Scop_Of_Certification = app.Scop_of_Certification,
+        //                Technical_Areas = app.Technical_Areas,
+        //                Accreditations = app.Accreditations,
+        //                Availbility_of_TechnicalAreas = app.Availbility_of_TechnicalAreas,
+        //                Availbility_of_Auditor = app.Availbility_of_Auditor,
+        //                Audit_Lang = app.Audit_Lang,
+        //                Is_Interpreter = app.IsInterpreter,
+        //                Is_Multisite_Sampling = app.IsMultisitesampling,
+        //                Total_Site = app.Total_site,
+        //                Sample_Site = app.Sample_Site,
+        //                Shift_Details = app.Shift_Details,
+        //                status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
+        //                AssignUser = app.Fk_UserId,
+        //                CustomerSites = app.CustomerSites,
+        //                KeyPersonnels = app.reviewerKeyPersonnel,
+        //                MandaysLists = app.MandaysLists,
+        //                ThreatLists = app.ReviewerThreatList,
+
+        //                RemarkLists = app.ReviewerRemarkList
+        //            };
+
+        //            response.Data = new List<ReviewerApplicationData> { result };
+        //            response.Message = "Data fetched successfully.";
+        //            response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+        //            response.Success = true;
+        //            response.ResponseCode = 0;
+
+
+
+        //        }
+        //        else
+        //        {
+        //            response.Message = "Invalid token.";
+        //            response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+        //            response.Success = false;
+        //            response.ResponseCode = 1;
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        response.Message = "GetCustomerApplication Exception: " + ex.Message;
+        //        response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+        //        response.Success = false;
+        //        response.ResponseCode = 1;
+        //    }
+
+        //    return response;
+        //}
 
         protected override void Disposing()
         {
