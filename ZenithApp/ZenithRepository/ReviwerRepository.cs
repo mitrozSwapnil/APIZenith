@@ -302,8 +302,7 @@ namespace ZenithApp.ZenithRepository
                 try
                 {
                     var now = DateTime.Now;
-                    if (request.ApplicationType?.Trim().ToLower() == "ISO")
-                    {
+                    
                         bool? isFinalSubmit = null;
                         DateTime? submitDate = null;
                         string status = "687a2925694d00158c9bf265";
@@ -377,139 +376,7 @@ namespace ZenithApp.ZenithRepository
                             response.Success = true;
                             response.ResponseCode = 0;
                         }
-                    }
 
-                }
-                catch (Exception ex)
-                {
-                    response.Message = "SaveReviewerISOApplication Exception: " + ex.Message;
-                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
-                    response.Success = false;
-                }
-            }
-            else
-            {
-                response.Message = "Invalid token.";
-                response.HttpStatusCode = HttpStatusCode.Unauthorized;
-                response.Success = false;
-            }
-
-            return response;
-        }
-
-
-
-
-        public async Task<addReviewerApplicationResponse> SubmitFSSCApplication(addFsscApplicationRequest request)
-        {
-            var response = new addReviewerApplicationResponse();
-            var UserId = _acc.HttpContext?.Session.GetString("UserId");
-            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
-            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
-            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
-
-            if (userType?.Trim().ToLower() == "reviewer")
-            {
-
-                try
-                {
-                    var now = DateTime.Now;
-                    bool? isFinalSubmit = null;
-                    DateTime? submitDate = null;
-                    string status = "687a2925694d00158c9bf265";
-
-                    // If user provided isFinalSubmit flag
-                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
-                    {
-                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
-
-                        if (isFinalSubmit == true)
-                        {
-                            submitDate = DateTime.Now;
-                            status = "687a2925694d00158c9bf267"; // Final Submit status
-
-                        }
-                    }
-                    if (request.ApplicationType == "FSSC")
-                    {
-                        var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Id, request.Id);
-
-                        // First, clear the sublists (hard delete)
-                        var clearSubLists = Builders<tbl_FSSC_Application>.Update
-                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
-                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
-                            .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
-                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
-                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>())
-                            .Set(x => x.auditLists, new List<stage1AndStage2Audit>())
-                            .Set(x => x.serveillannceAuditLists, new List<ServeillannceAudit>())
-                            .Set(x => x.reCertificationAudits, new List<ReCertificationAudit>())
-                            .Set(x => x.transferAudits, new List<TransferAudit>())
-                            .Set(x => x.productCategoryAndSubs, new List<ProductCategoryAndSubCategoryList>())
-                            .Set(x => x.specialAudits, new List<SpecialAudit>())
-                            .Set(x => x.hACCPLists, new List<HACCPList>())
-                            .Set(x => x.standardsLists, new List<StandardsList>())
-                            .Set(x => x.categoryLists, new List<CategoryList>())
-                            .Set(x => x.subCategoryLists, new List<SubCategoryList>());
-        
-
-                            await _fssc.UpdateOneAsync(filter, clearSubLists);
-
-                            // Then, update all fields including new sublist data
-                            var update = Builders<tbl_FSSC_Application>.Update
-                            .Set(x => x.Application_Received_date, request.Application_Received_date)
-                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
-                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
-                            .Set(x => x.AssignTo, request.AssignTo)
-                            .Set(x => x.Audit_Type, request.Audit_Type)
-                            .Set(x => x.ApplicationReviewDate, request.ApplicationReviewDate)
-                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
-                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
-                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
-                            .Set(x => x.Audit_Lang, request.Audit_Lang)
-                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
-                            .Set(x => x.IsInterpreter, request.IsInterpreter)
-                            .Set(x => x.IsMultisitesampling, request.IsMultisitesampling)
-                            .Set(x => x.Total_site, request.Total_site)
-                            .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
-                            .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
-                            .Set(x => x.Seasonality_Factor, request.Seasonality_Factor)
-                            .Set(x => x.AnyAllergens, request.AnyAllergens)
-                            .Set(x => x.Status, status)
-                            .Set(x => x.IsDelete, request.IsDelete ?? false)
-                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
-                            .Set(x => x.Fk_UserId, UserId)
-
-                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
-                            .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
-                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
-                            .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
-                            .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
-                            .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
-                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>())
-
-                            .Set(x => x.auditLists, request.auditLists ?? new List<stage1AndStage2Audit>())
-                            .Set(x => x.serveillannceAuditLists, request.serveillannceAuditLists ?? new List<ServeillannceAudit>())
-                            .Set(x => x.reCertificationAudits, request.reCertificationAudits ?? new List<ReCertificationAudit>())
-                            .Set(x => x.transferAudits, request.transferAudits ?? new List<TransferAudit>())
-                            .Set(x => x.specialAudits, request.specialAudits ?? new List<SpecialAudit>())
-                            .Set(x => x.productCategoryAndSubs, request.productCategoryAndSubs ?? new List<ProductCategoryAndSubCategoryList>())
-                            .Set(x => x.hACCPLists, request.hACCPLists ?? new List<HACCPList>())
-                            .Set(x => x.standardsLists, request.standardsLists ?? new List<StandardsList>())
-                            .Set(x => x.categoryLists, request.categoryLists ?? new List<CategoryList>())
-                            .Set(x => x.subCategoryLists, request.subCategoryLists ?? new List<SubCategoryList>())
-
-                            .Set(x => x.UpdatedAt, now)
-                            .Set(x => x.UpdatedBy, UserId);
-
-                        await _fssc.UpdateOneAsync(filter, update);
-
-                        //response.Data = new List<tbl_ISO_Application> { result };
-                        response.Message = "Data Saved successfully.";
-                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                        response.Success = true;
-                        response.ResponseCode = 0;
-                    }
                 }
                 catch (Exception ex)
                 {
