@@ -11,7 +11,7 @@ namespace ZenithApp.ZenithEntities
         public string Id { get; set; }
 
         public string ApplicationId { get; set; }
-        public string QuoatationId { get; set; }
+        public string QuotationId { get; set; }
         public string Currency { get; set; }
 
         public string CertificateType { get; set; }
