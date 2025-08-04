@@ -137,9 +137,9 @@ namespace ZenithApp.ZenithRepository
 
 
 
-        public async Task<getCretificationsbyAppIdResponse> GetMandaysbyapplicationId(getmandaysbyapplicationIdRequest request)
+        public async Task<getmandaysbyapplicationIdResponse> GetMandaysbyapplicationId(getmandaysbyapplicationIdRequest request)
         {
-            var response = new getCretificationsbyAppIdResponse();
+            var response = new getmandaysbyapplicationIdResponse();
             var userId = _acc.HttpContext?.Session.GetString("UserId");
             var userFkRole = (await _user.Find(x => x.Id == userId).FirstOrDefaultAsync())?.Fk_RoleID;
             var usertype = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
@@ -163,7 +163,50 @@ namespace ZenithApp.ZenithRepository
 
                     var result = tblCollection.Find(filter).FirstOrDefault();
 
-                    response.Message = "Quotation saved successfully.";
+                    if (result.Contains("MandaysLists") && result["MandaysLists"].IsBsonArray)
+                    {
+                        var mandaysArray = result["MandaysLists"].AsBsonArray;
+
+                        foreach (var item in mandaysArray)
+                        {
+                            if (item.IsBsonDocument)
+                            {
+                                var doc = item.AsBsonDocument;
+                                int auditManDays = int.TryParse(doc.GetValue("Audit_ManDays", "0").ToString(), out var amd) ? amd : 0;
+
+                                int additionalManDays = int.TryParse(doc.GetValue("Additional_ManDays", "0").ToString(), out var admd) ? admd : 0;
+
+                                int total = auditManDays + additionalManDays;
+
+                                doc.Set("TotalManDays", total);
+                            }
+                        }
+
+                       
+                        result["MandaysLists"] = mandaysArray;
+
+                      
+                    }
+
+                    var responseObject = new
+                    {
+                        Id = result.GetValue("_id").AsObjectId.ToString(),
+                        CertificateId = result.GetValue("Fk_Certificate").AsObjectId.ToString(),
+                        MandaysLists = result["MandaysLists"]
+         .AsBsonArray
+         .Select(x => new
+         {
+             ActivityName = x["ActivityName"].AsString,
+             Audit_ManDays = x["Audit_ManDays"].AsString,
+             Additional_ManDays = x["Additional_ManDays"].AsString,
+             TotalManDays = x["TotalManDays"].AsInt32,
+             // Add other fields if needed
+         }).ToList()
+                    };
+
+                    response.data = responseObject;
+
+                    response.Message = "Mandays get successfully.";
                     response.Success = true;
                     response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                     response.ResponseCode = 0;

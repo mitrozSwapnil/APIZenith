@@ -31,6 +31,7 @@ namespace ZenithApp.ZenithRepository
         
 
 
+        private readonly MongoDbService _mongoDbService;
 
 
 
@@ -62,6 +63,7 @@ namespace ZenithApp.ZenithRepository
 
 
             _acc = acc;
+            _mongoDbService = mongoDbService;
         }
 
 
@@ -196,6 +198,7 @@ namespace ZenithApp.ZenithRepository
                         response.Data = data;
                         response.CertificateName = cerificateName;
                         response.statusName = status;
+
                     }
                     else if (request.CertificationName == "FSSC")
                     {
