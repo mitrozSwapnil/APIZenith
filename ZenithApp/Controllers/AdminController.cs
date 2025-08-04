@@ -87,7 +87,7 @@ namespace ZenithApp.Controllers
             }
             else if (action == nameof(GetAdminApplication))
             {
-                return _adminRepository.GetAdminApplication(request as getReviewerApplicationRequest);
+                return _adminRepository.GetAdminApplication(request as getReviewerApplicationRequest).Result;
             }
             else if (action == nameof(AssignReviewerTwoApplication))
             {
