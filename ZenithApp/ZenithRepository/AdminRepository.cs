@@ -1,7 +1,9 @@
 ﻿using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using System.Net;
 using System.Runtime.ConstrainedExecution;
 using System.Threading;
+using ZenithApp.CommonServices;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
@@ -27,12 +29,13 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_Master_Remark> _masterremark;
         private readonly IMongoCollection<tbl_ISO_Application> _iso;
         private readonly IMongoCollection<tbl_FSSC_Application> _fssc;
+        private readonly MongoDbService _mongoDbService;
 
 
 
         private readonly IHttpContextAccessor _acc;
 
-        public AdminRepository(IOptions<MongoDbSettings> settings, IHttpContextAccessor acc)
+        public AdminRepository(IOptions<MongoDbSettings> settings, IHttpContextAccessor acc, MongoDbService mongoDbService)
         {
             var client = new MongoClient(settings.Value.ConnectionString);
             var database = client.GetDatabase(settings.Value.DatabaseName);
@@ -52,6 +55,7 @@ namespace ZenithApp.ZenithRepository
             _masterthreat = database.GetCollection<tbl_Master_Threat>("tbl_Master_Threat");
             _iso = database.GetCollection<tbl_ISO_Application>("tbl_ISO_Application");
             _fssc = database.GetCollection<tbl_FSSC_Application>("tbl_FSSC_Application");
+            _mongoDbService = mongoDbService;
             _acc = acc;
         }
         // Add methods for admin functionalities here
@@ -616,7 +620,7 @@ namespace ZenithApp.ZenithRepository
             return response;
         }
 
-        public getReviewerApplicationResponse GetAdminApplication(getReviewerApplicationRequest request)
+        public async Task<getReviewerApplicationResponse> GetAdminApplication(getReviewerApplicationRequest request)
         {
             getReviewerApplicationResponse response = new getReviewerApplicationResponse();
             try
@@ -635,72 +639,130 @@ namespace ZenithApp.ZenithRepository
                         response.ResponseCode = 1;
                         return response;
                     }
+                    if (request.CertificationName == "ISO")
+                    {
 
-                    var Fkcertificate = _iso
-                        .Find(x => x.Id == request.applicationId && x.IsDelete == false)
-                        .FirstOrDefault().Fk_Certificate;
 
-                    var nameofcertificate = _masterCertificate
-                        .Find(x => x.Id == Fkcertificate && x.Is_Delete == false)
-                        .FirstOrDefault()?.Id;
+                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
 
-                    var app = _iso
-                        .Find(x => x.Fk_Certificate == nameofcertificate && x.IsDelete == false)
-                        .SortByDescending(x => x.CreatedAt)
-                        .FirstOrDefault();
+                        var data = await _iso.Find(filter).FirstOrDefaultAsync();
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+
+
+                        response.Data = data;
+                        response.CertificateName = cerificateName;
+                        response.statusName = status;
+                    }
+                    else if (request.CertificationName == "FSSC")
+                    {
+                        var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var result = await _fssc.Find(filter).FirstOrDefaultAsync();
+
+                        response.Data = result;
+                    }
+                    else
+                    {
+                        response.Message = "Invalid Certification Name.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                        response.Success = false;
+                        response.ResponseCode = 1;
+                        return response;
+                    }
+                    response.Message = "Data fetched successfully.";
+                    response.HttpStatusCode = HttpStatusCode.OK;
+                    response.Success = true;
+                    response.ResponseCode = 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    //var Fkcertificate = _iso
+                    //    .Find(x => x.Id == request.applicationId && x.IsDelete == false)
+                    //    .FirstOrDefault().Fk_Certificate;
+
+                    //var nameofcertificate = _masterCertificate
+                    //    .Find(x => x.Id == Fkcertificate && x.Is_Delete == false)
+                    //    .FirstOrDefault()?.Id;
+
+                    //var app = _iso
+                    //    .Find(x => x.Fk_Certificate == nameofcertificate && x.IsDelete == false)
+                    //    .SortByDescending(x => x.CreatedAt)
+                    //    .FirstOrDefault();
 
                     //var status = _status
                     //    .Find(x => x.Id == app.Status && x.IsDelete == false)
                     //    .FirstOrDefault().StatusName;
 
-                    if (app == null)
-                    {
-                        response.Message = "No data found for the given ApplicationId.";
-                        response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
-                        response.Success = false;
-                        response.ResponseCode = 1;
-                        return response;
-                    }
+                    //if (app == null)
+                    //{
+                    //    response.Message = "No data found for the given ApplicationId.";
+                    //    response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                    //    response.Success = false;
+                    //    response.ResponseCode = 1;
+                    //    return response;
+                    //}
 
 
-                    var result = new ReviewerApplicationData
-                    {
-                        Id = app.Id,
-                        ApplicationId = app.ApplicationId,
-                        Orgnization_Name = app.Orgnization_Name,
-                        Application_Received_date = app.Application_Received_date,
-                        Constituation_of_Orgnization = app.Constituation_of_Orgnization,
-                        Certification_Name = _masterCertificate
-                            .Find(x => x.Id == app.Fk_Certificate && x.Is_Delete == false)
-                            .FirstOrDefault()?.Certificate_Name,
-                        Audit_Type = app.Audit_Type,
-                        Scop_Of_Certification = app.Scop_of_Certification,
-                        Technical_Areas = app.Technical_Areas,
-                        Accreditations = app.Accreditations,
-                        Availbility_of_TechnicalAreas = app.Availbility_of_TechnicalAreas,
-                        Availbility_of_Auditor = app.Availbility_of_Auditor,
-                        Audit_Lang = app.Audit_Lang,
-                        Is_Interpreter = app.IsInterpreter,
-                        Is_Multisite_Sampling = app.IsMultisitesampling,
-                        Total_Site = app.Total_site,
-                        Sample_Site = app.Sample_Site,
-                        Shift_Details = app.Shift_Details,
-                        status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
-                        AssignUser = app.Fk_UserId,
-                        CustomerSites = app.CustomerSites,
-                        KeyPersonnels = app.reviewerKeyPersonnel,
-                        MandaysLists = app.MandaysLists,
-                        ThreatLists = app.ReviewerThreatList,
-                        RemarkLists = app.ReviewerRemarkList
-                    };
+                    //var result = new ReviewerApplicationData
+                    //{
+                    //    Id = app.Id,
+                    //    ApplicationId = app.ApplicationId,
+                    //    Orgnization_Name = app.Orgnization_Name,
+                    //    Application_Received_date = app.Application_Received_date,
+                    //    Constituation_of_Orgnization = app.Constituation_of_Orgnization,
+                    //    Certification_Name = _masterCertificate
+                    //        .Find(x => x.Id == app.Fk_Certificate && x.Is_Delete == false)
+                    //        .FirstOrDefault()?.Certificate_Name,
+                    //    Audit_Type = app.Audit_Type,
+                    //    Scop_Of_Certification = app.Scop_of_Certification,
+                    //    Technical_Areas = app.Technical_Areas,
+                    //    Accreditations = app.Accreditations,
+                    //    Availbility_of_TechnicalAreas = app.Availbility_of_TechnicalAreas,
+                    //    Availbility_of_Auditor = app.Availbility_of_Auditor,
+                    //    Audit_Lang = app.Audit_Lang,
+                    //    Is_Interpreter = app.IsInterpreter,
+                    //    Is_Multisite_Sampling = app.IsMultisitesampling,
+                    //    Total_Site = app.Total_site,
+                    //    Sample_Site = app.Sample_Site,
+                    //    Shift_Details = app.Shift_Details,
+                    //    status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
+                    //    AssignUser = app.Fk_UserId,
+                    //    CustomerSites = app.CustomerSites,
+                    //    KeyPersonnels = app.reviewerKeyPersonnel,
+                    //    MandaysLists = app.MandaysLists,
+                    //    ThreatLists = app.ReviewerThreatList,
+                    //    RemarkLists = app.ReviewerRemarkList
+                    //};
 
 
 
-                    response.Data = new List<ReviewerApplicationData> { result };
-                    response.Message = "Data fetched successfully.";
-                    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                    response.Success = true;
-                    response.ResponseCode = 0;
+                    //response.Data = new List<ReviewerApplicationData> { result };
+                    //response.Message = "Data fetched successfully.";
+                    //response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                    //response.Success = true;
+                    //response.ResponseCode = 0;
 
 
 
