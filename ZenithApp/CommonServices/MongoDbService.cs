@@ -27,9 +27,11 @@ namespace ZenithApp.CommonServices
             var collectionName = $"tbl_{type}_Application";
             return _database.GetCollection<T>(collectionName);
         }
+
         public string Getcertificatename(string certificateId)
         {
             var name = _masterCertificate.Find(x => x.Id == certificateId)?.FirstOrDefaultAsync().Result.Certificate_Name;
+
             return name;
         }
         public string ReviewerName(string reviewerId)
@@ -42,5 +44,6 @@ namespace ZenithApp.CommonServices
             var name = _status.Find(x => x.Id == statusid)?.FirstOrDefaultAsync().Result.StatusName;
             return name;
         }
+
     }
 }
