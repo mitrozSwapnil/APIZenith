@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using System.Net.NetworkInformation;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 
@@ -11,6 +12,7 @@ namespace ZenithApp.CommonServices
         private readonly IMongoCollection<tbl_master_certificates> _masterCertificate;
         private readonly IMongoCollection<tbl_user> _userlist;
         private readonly IMongoCollection<tbl_Status> _status;
+
         public MongoDbService(IMongoClient mongoClient, IOptions<MongoDbSettings> settings)
         {
             _database = mongoClient.GetDatabase(settings.Value.DatabaseName);
@@ -25,8 +27,11 @@ namespace ZenithApp.CommonServices
             var collectionName = $"tbl_{type}_Application";
             return _database.GetCollection<T>(collectionName);
         }
-        public string Getcertificatename(string certificateId) {
-            var name=_masterCertificate.Find(x=>x.Id==certificateId)?.FirstOrDefaultAsync().Result.Certificate_Name;
+
+        public string Getcertificatename(string certificateId)
+        {
+            var name = _masterCertificate.Find(x => x.Id == certificateId)?.FirstOrDefaultAsync().Result.Certificate_Name;
+
             return name;
         }
         public string ReviewerName(string reviewerId)

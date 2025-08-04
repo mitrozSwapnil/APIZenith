@@ -67,7 +67,7 @@ namespace ZenithApp.ZenithEntities
         public List<HACCPList> hACCPLists { get; set; } = new List<HACCPList>();
         public List<StandardsList> standardsLists { get; set; } = new List<StandardsList>();
         public List<CategoryList> categoryLists { get; set; } = new List<CategoryList>();
-        //public List<SubCategoryList> subCategoryLists { get; set; } = new List<SubCategoryList>();
+        public List<SubCategoryList> subCategoryLists { get; set; } = new List<SubCategoryList>();
 
         public List<ReviewerSiteDetails> CustomerSites { get; set; } = new List<ReviewerSiteDetails>();
         
