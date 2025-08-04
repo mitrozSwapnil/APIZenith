@@ -357,7 +357,7 @@ namespace ZenithApp.ZenithRepository
                                             Technical_Areas = new List<TechnicalAreasList>(),
                                             Accreditations = new List<AccreditationsList>(),
                                             categoryLists = new List<CategoryList>(),
-                                            subCategoryLists = new List<SubCategoryList>(),
+                                            //subCategoryLists = new List<SubCategoryList>(),
                                             Availbility_of_TechnicalAreas = false,
                                             Availbility_of_Auditor = false,
                                             Audit_Lang = "",
