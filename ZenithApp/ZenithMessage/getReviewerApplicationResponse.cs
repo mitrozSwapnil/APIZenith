@@ -6,5 +6,7 @@ namespace ZenithApp.ZenithMessage
     {
         //public List<ReviewerApplicationData> Data { get; set; }
         public object Data { get; set; }
+        public string CertificateName { get; set; }
+        public string AssigntToName { get; set; }
     }
 }

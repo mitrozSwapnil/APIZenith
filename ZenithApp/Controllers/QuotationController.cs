@@ -38,7 +38,7 @@ namespace ZenithApp.Controllers
             var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
             var UserId = userNameDetails.Value;
             _acc.HttpContext?.Session.SetString("UserId", UserId);
-            return this.ProcessRequest<getCretificationsbyAppIdResponse>(model);
+            return this.ProcessRequest<getmandaysbyapplicationIdResponse>(model);
         }
 
         protected override BaseResponse Execute(string action, BaseRequest request)

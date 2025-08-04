@@ -2,6 +2,7 @@
 using MongoDB.Driver;
 using System.Net;
 using System.Runtime.ConstrainedExecution;
+using ZenithApp.CommonServices;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
@@ -28,13 +29,14 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_FSSC_Application> _fssc;
 
 
+        private readonly MongoDbService _mongoDbService;
 
 
 
 
         private readonly IHttpContextAccessor _acc;
 
-        public ReviwerRepository(IOptions<MongoDbSettings> settings, IHttpContextAccessor acc)
+        public ReviwerRepository(IOptions<MongoDbSettings> settings, IHttpContextAccessor acc, MongoDbService mongoDbService)
         {
             var client = new MongoClient(settings.Value.ConnectionString);
             var database = client.GetDatabase(settings.Value.DatabaseName);
@@ -55,6 +57,7 @@ namespace ZenithApp.ZenithRepository
 
 
             _acc = acc;
+            _mongoDbService = mongoDbService;
         }
 
 
@@ -179,8 +182,18 @@ namespace ZenithApp.ZenithRepository
                     if (request.CertificationName == "ISO")
                     {
                         var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.applicationId);
-                        var result = await _iso.Find(filter).FirstOrDefaultAsync();
                         
+                        var data = await _iso.Find(filter).FirstOrDefaultAsync();
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var result = new
+                        {
+                           
+                             Data = data,
+                             CertificateName = cerificateName,
+                             AssigntToName = assignmane,
+                        };
+
                         response.Data = result;
                     }
                     else if (request.CertificationName == "FSSC")
