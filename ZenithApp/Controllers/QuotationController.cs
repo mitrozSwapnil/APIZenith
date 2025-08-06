@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
 using ZenithApp.ZenithRepository;
 
@@ -20,6 +21,17 @@ namespace ZenithApp.Controllers
         }
 
 
+        [HttpPost("AddFees")]
+        public IActionResult AddFees([FromBody] tbl_master_quotation_fees fees)
+        {
+            if (fees == null)
+                return BadRequest("Invalid data.");
+
+            _quotationRepository.AddFees(fees); 
+
+            return Ok(new { message = "Successfully added" });
+        }
+
         [HttpPost("CreateQuotation")]
         public IActionResult CreateQuotation(createQuotationRequest model)
         {
@@ -31,14 +43,14 @@ namespace ZenithApp.Controllers
         }
 
 
-        [HttpPost("GetMandaysbyapplicationId")]
-        public IActionResult GetMandaysbyapplicationId(getmandaysbyapplicationIdRequest model)
+        [HttpPost("GetQuotation")]
+        public IActionResult GetQuotation(getmandaysbyapplicationIdRequest model)
         {
             var claims = HttpContext.User.Claims;
             var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
             var UserId = userNameDetails.Value;
             _acc.HttpContext?.Session.SetString("UserId", UserId);
-            return this.ProcessRequest<getCretificationsbyAppIdResponse>(model);
+            return this.ProcessRequest<getmandaysbyapplicationIdResponse>(model);
         }
 
         protected override BaseResponse Execute(string action, BaseRequest request)
@@ -47,9 +59,9 @@ namespace ZenithApp.Controllers
             {
                 return _quotationRepository.CreateQuotation(request as createQuotationRequest).Result;
             }
-            else if (action == nameof(GetMandaysbyapplicationId))
+            else if (action == nameof(GetQuotation))
             {
-                return _quotationRepository.GetMandaysbyapplicationId(request as getmandaysbyapplicationIdRequest).Result;
+                return _quotationRepository.GetQuotation(request as getmandaysbyapplicationIdRequest).Result;
             }
 
             throw new NotImplementedException();
