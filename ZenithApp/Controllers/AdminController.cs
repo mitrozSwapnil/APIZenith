@@ -70,6 +70,16 @@ namespace ZenithApp.Controllers
             return this.ProcessRequest<userDropdownResponse>(model);
         }
 
+        [HttpPost("SaveISOApplication")]
+        public IActionResult SaveISOApplication(addReviewerApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
+
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
 
@@ -93,7 +103,12 @@ namespace ZenithApp.Controllers
             {
                 return _adminRepository.AssignReviewerTwoApplication(request as assignUserRequest).Result;
             }
-            
+            else if (action == nameof(SaveISOApplication))
+            {
+                return _adminRepository.SaveISOApplication(request as addReviewerApplicationRequest).Result;
+            }
+
+
 
 
             throw new NotImplementedException();

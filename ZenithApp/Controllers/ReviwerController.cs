@@ -45,6 +45,15 @@ namespace ZenithApp.Controllers
             _acc.HttpContext?.Session.SetString("UserId", UserId);
             return this.ProcessRequest<addReviewerApplicationResponse>(model);
         }
+        [HttpPost("SaveFSSCApplication")]
+        public IActionResult SaveFSSCApplication(addFsscApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
 
 
         protected override BaseResponse Execute(string action, BaseRequest request)
@@ -61,6 +70,10 @@ namespace ZenithApp.Controllers
             else if (action == nameof(SaveISOApplication))
             {
                 return _reviwerRepository.SaveISOApplication(request as addReviewerApplicationRequest).Result;
+            }
+            else if (action == nameof(SaveFSSCApplication))
+            {
+                return _reviwerRepository.SaveFSSCApplication(request as addFsscApplicationRequest).Result;
             }
 
 
