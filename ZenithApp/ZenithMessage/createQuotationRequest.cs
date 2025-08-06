@@ -12,7 +12,7 @@ namespace ZenithApp.ZenithMessage
 
         public string? CertificateType { get; set; }
 
-        public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
+        
 
         public Dictionary<string, object> QuotationData { get; set; }
     }
