@@ -31,7 +31,7 @@ namespace ZenithApp.ZenithRepository
         
 
 
-        private readonly MongoDbService _mongoDbService;
+      
 
 
 
@@ -63,7 +63,7 @@ namespace ZenithApp.ZenithRepository
 
 
             _acc = acc;
-            _mongoDbService = mongoDbService;
+            
         }
 
 
@@ -85,6 +85,63 @@ namespace ZenithApp.ZenithRepository
                     {
                         // Fetch all applications assigned to the user in the certification department
                         var applications = _iso
+                            .Find(x => x.IsDelete == false && x.Fk_UserId == UserId)
+                            .ToList();
+                        foreach (var app in applications)
+                        {
+                            var masterCert = _masterCertificate.Find(x => x.Id == app.Fk_Certificate).FirstOrDefault();
+                            if (masterCert != null)
+                            {
+                                var dashboardRecord = new CustomerDashboardData
+                                {
+                                    Id = app.Id,
+                                    ApplicationId = app.ApplicationId,
+                                    CompanyName = app.Orgnization_Name,
+                                    Certification_Name = masterCert.Certificate_Name,
+                                    Status = (await _status.Find(x => x.Id == app.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
+                                    ReceiveDate = app.Application_Received_date,
+                                    AssignedUserName = _user.Find(x => x.Id == app.Fk_UserId).FirstOrDefault()?.FullName
+                                };
+                                dashboardList.Add(dashboardRecord);
+                            }
+                        }
+                        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                        {
+                            var searchTerm = request.SearchTerm.Trim().ToLower();
+                            dashboardList = dashboardList
+                                .Where(x =>
+                                    (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+                                    (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+                                )
+                                .ToList();
+                        }
+
+                        // Step 6 — Pagination
+                        var totalCount = dashboardList.Count;
+                        var skip = (request.PageNumber - 1) * request.PageSize;
+
+                        var paginatedList = dashboardList
+                            .Skip(skip)
+                            .Take(request.PageSize)
+                            .ToList();
+
+                        var pagination = new PageinationDto
+                        {
+                            PageNumber = request.PageNumber,
+                            PageSize = request.PageSize,
+                            TotalRecords = totalCount
+                        };
+
+                        response.Data = paginatedList;
+                        response.Pagination = pagination;
+                        response.Message = "Dashboard fetched successfully.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                    }
+                    else if (department?.Trim().ToLower() == "fssc")
+                    {
+                        // Fetch all applications assigned to the user in the certification department
+                        var applications = _fssc
                             .Find(x => x.IsDelete == false && x.Fk_UserId == UserId)
                             .ToList();
                         foreach (var app in applications)
