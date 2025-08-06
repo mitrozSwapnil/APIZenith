@@ -25,6 +25,7 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_ISO_Application> _isoApplication;
         private readonly IMongoCollection<tbl_Reviewer_Audit_ManDays> _reviewerAuditManDays;
         private readonly IMongoCollection<tbl_quoatation> _quoatation;
+        private readonly IMongoCollection<tbl_master_quotation_fees> _masterfees;
 
         private readonly MongoDbService _mongoDbService;
 
@@ -48,9 +49,21 @@ namespace ZenithApp.ZenithRepository
             _isoApplication = database.GetCollection<tbl_ISO_Application>("tbl_ISO_Application");
             _reviewerAuditManDays = database.GetCollection<tbl_Reviewer_Audit_ManDays>("tbl_reviewer_audit_mandays");
             _quoatation = database.GetCollection<tbl_quoatation>("tbl_quoatation");
+            _masterfees = database.GetCollection<tbl_master_quotation_fees>("tbl_master_quotation_fees");
             _acc = acc;
             _mongoDbService = mongoDbService;
         }
+
+        public void AddFees(tbl_master_quotation_fees fees)
+        {
+            if (fees == null)
+            {
+                throw new ArgumentNullException(nameof(fees));
+            }
+
+            _masterfees.InsertOne(fees);
+        }
+
 
 
 
@@ -70,7 +83,7 @@ namespace ZenithApp.ZenithRepository
                         ApplicationId = request.ApplicationId,
                         QuotationId = GenerateQuotationId(),
                         CertificateType = request.CertificateType,
-                        CreatedOn = request.CreatedOn,
+                        CreatedOn = DateTime.Now,
                         Currency = "INR", // or get from request if needed
                         QuotationData = BsonDocument.Parse(JsonSerializer.Serialize(request.QuotationData))
                     };
@@ -137,7 +150,7 @@ namespace ZenithApp.ZenithRepository
 
 
 
-        public async Task<getmandaysbyapplicationIdResponse> GetMandaysbyapplicationId(getmandaysbyapplicationIdRequest request)
+        public async Task<getmandaysbyapplicationIdResponse> GetQuotation(getmandaysbyapplicationIdRequest request)
         {
             var response = new getmandaysbyapplicationIdResponse();
             var userId = _acc.HttpContext?.Session.GetString("UserId");
@@ -158,11 +171,29 @@ namespace ZenithApp.ZenithRepository
                     var tblCollection = _mongoDbService.GetApplicationCollection<BsonDocument>(certificate.Certificate_Name);
                     if (!ObjectId.TryParse(request.ApplicationId, out var objectId))
                         throw new Exception("Invalid Application ID format.");
-                    var filter = Builders<BsonDocument>.Filter.Eq("_id", objectId);
 
+                    if (!ObjectId.TryParse(request.ApplicationId, out var applicationObjectId))
+                        throw new Exception("Invalid Application ID format.");
 
-                    var result = tblCollection.Find(filter).FirstOrDefault();
+                    if (!ObjectId.TryParse(request.CertificateTypeId, out var certificateObjectId))
+                        throw new Exception("Invalid Certificate Type ID format.");
 
+                    //var filter = Builders<BsonDocument>.Filter.Eq("_id", objectId);
+
+                    var filter = Builders<BsonDocument>.Filter.And(
+    Builders<BsonDocument>.Filter.Eq("ApplicationId", request.ApplicationId),
+    Builders<BsonDocument>.Filter.Eq("Fk_Certificate", certificateObjectId)
+);
+
+                    var result = tblCollection
+      .Find(filter)
+      .Sort(Builders<BsonDocument>.Sort.Descending("_id"))
+      .FirstOrDefault();
+
+                    // Step 1: Fetch fees list from the fees collection
+                    var feesList = _masterfees.Find(FilterDefinition<tbl_master_quotation_fees>.Empty).ToList();
+
+                    // Step 2: Your existing MandaysList processing
                     if (result.Contains("MandaysLists") && result["MandaysLists"].IsBsonArray)
                     {
                         var mandaysArray = result["MandaysLists"].AsBsonArray;
@@ -172,37 +203,52 @@ namespace ZenithApp.ZenithRepository
                             if (item.IsBsonDocument)
                             {
                                 var doc = item.AsBsonDocument;
-                                int auditManDays = int.TryParse(doc.GetValue("Audit_ManDays", "0").ToString(), out var amd) ? amd : 0;
 
+                                int auditManDays = int.TryParse(doc.GetValue("Audit_ManDays", "0").ToString(), out var amd) ? amd : 0;
                                 int additionalManDays = int.TryParse(doc.GetValue("Additional_ManDays", "0").ToString(), out var admd) ? admd : 0;
 
                                 int total = auditManDays + additionalManDays;
-
                                 doc.Set("TotalManDays", total);
                             }
                         }
 
-                       
                         result["MandaysLists"] = mandaysArray;
-
-                      
                     }
 
+                    // Step 3: Build response object with dynamic quotationfees
                     var responseObject = new
                     {
-                        Id = result.GetValue("_id").AsObjectId.ToString(),
+                        _id = result.GetValue("_id").AsObjectId.ToString(),
+                        ApplicationId = request.ApplicationId,
                         CertificateId = result.GetValue("Fk_Certificate").AsObjectId.ToString(),
                         MandaysLists = result["MandaysLists"]
-         .AsBsonArray
-         .Select(x => new
-         {
-             ActivityName = x["ActivityName"].AsString,
-             Audit_ManDays = x["Audit_ManDays"].AsString,
-             Additional_ManDays = x["Additional_ManDays"].AsString,
-             TotalManDays = x["TotalManDays"].AsInt32,
-             // Add other fields if needed
-         }).ToList()
+                            .AsBsonArray
+                            .Select(x =>
+                            {
+                                var activityName = x["ActivityName"].AsString;
+
+                                // Find matching fee
+                                var fee = feesList.FirstOrDefault(f => f.Activity_Name == activityName);
+                                double quotationFee = fee?.Fees ?? 0;
+
+                                return new
+                                {
+                                    ActivityName = activityName,
+                                    Audit_ManDays = x["Audit_ManDays"].AsString,
+                                    Additional_ManDays = x["Additional_ManDays"].AsString,
+                                    TotalManDays = x["TotalManDays"].AsInt32,
+                                    quotationfees = quotationFee
+                                };
+                            }).ToList(),
+
+                            FeeList = feesList.Select(f => new
+                            {
+                                f.Id,
+                                f.Activity_Name,
+                                f.Fees
+                            }).ToList()
                     };
+
 
                     response.data = responseObject;
 
