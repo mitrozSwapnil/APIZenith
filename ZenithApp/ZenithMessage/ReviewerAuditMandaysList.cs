@@ -20,6 +20,9 @@ namespace ZenithApp.ZenithMessage
         public decimal Recertification_OffSite_ManDays { get; set; }
 
         public string AdditionalComments { get; set; }
+
+          
+
         public string Note { get; set; }
 
     }

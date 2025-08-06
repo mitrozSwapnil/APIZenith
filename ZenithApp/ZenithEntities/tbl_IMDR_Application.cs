@@ -1,11 +1,12 @@
-﻿using MongoDB.Bson.Serialization.Attributes;
-using MongoDB.Bson;
+﻿using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using ZenithApp.ZenithMessage;
 
 namespace ZenithApp.ZenithEntities
 {
-    public class tbl_ICMED_Application
+    public class tbl_IMDR_Application
     {
+
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; }
@@ -21,10 +22,10 @@ namespace ZenithApp.ZenithEntities
         public string? AssignTo { get; set; }
 
 
-       
+
         public string? Audit_Type { get; set; }
         public string? Scop_of_Certification { get; set; }
-        public string? remark { get; set; }
+        public string? masterfile { get; set; }
         public bool? Availbility_of_TechnicalAreas { get; set; }
         public bool? Availbility_of_Auditor { get; set; }
         public string? Audit_Lang { get; set; }
@@ -72,16 +73,13 @@ namespace ZenithApp.ZenithEntities
         public List<ReCertificationAudit> reCertificationAudits { get; set; } = new List<ReCertificationAudit>();
         public List<TransferAudit> transferAudits { get; set; } = new List<TransferAudit>();
         public List<SpecialAudit> specialAudits { get; set; } = new List<SpecialAudit>();
-        
-         
+
+
         public List<ProductCategoryAndSubCategoryList> productCategoryAndSubs { get; set; } = new List<ProductCategoryAndSubCategoryList>();
         public List<HACCPList> hACCPLists { get; set; } = new List<HACCPList>();
         public List<StandardsList> standardsLists { get; set; } = new List<StandardsList>();
         public List<CategoryList> categoryLists { get; set; } = new List<CategoryList>();
         public List<SubCategoryList> subCategoryLists { get; set; } = new List<SubCategoryList>();
 
-
-
-       
     }
 }

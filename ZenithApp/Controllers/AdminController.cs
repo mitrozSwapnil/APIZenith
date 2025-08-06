@@ -93,8 +93,7 @@ namespace ZenithApp.Controllers
             {
                 return _adminRepository.AssignReviewerTwoApplication(request as assignUserRequest).Result;
             }
-            
-
+             
 
             throw new NotImplementedException();
         }
