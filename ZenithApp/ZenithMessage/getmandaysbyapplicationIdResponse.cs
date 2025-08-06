@@ -2,9 +2,9 @@
 {
     public class getmandaysbyapplicationIdResponse:BaseResponse
     {
-        public string? ApplicationId { get; set; }
+        public object data { get; set; }
 
-        public string? CertificateTypeId { get; set; }
+        
        
     }
 }

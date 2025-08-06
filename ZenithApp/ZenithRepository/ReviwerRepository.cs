@@ -33,6 +33,7 @@ namespace ZenithApp.ZenithRepository
         
 
 
+      
 
 
 
@@ -66,6 +67,7 @@ namespace ZenithApp.ZenithRepository
 
 
             _acc = acc;
+            
         }
 
 
@@ -141,6 +143,7 @@ namespace ZenithApp.ZenithRepository
                         response.Success = true;
                     }
 
+
                    else if (department?.Trim().ToLower() == "icmed")
                    {
                         // Fetch all applications assigned to the user in the certification department
@@ -202,7 +205,11 @@ namespace ZenithApp.ZenithRepository
                     {
                         // Fetch all applications assigned to the user in the certification department
                         var applications = _imdr
-                            .Find(x => x.IsDelete == false && x.Fk_UserId == UserId)
+
+                    else if (department?.Trim().ToLower() == "fssc")
+                    {
+                        // Fetch all applications assigned to the user in the certification department
+                        var applications = _fssc.Find(x => x.IsDelete == false && x.Fk_UserId == UserId)
                             .ToList();
                         foreach (var app in applications)
                         {
@@ -255,8 +262,6 @@ namespace ZenithApp.ZenithRepository
                         response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                         response.Success = true;
                     }
-
-
 
                     else
                     {
@@ -318,6 +323,7 @@ namespace ZenithApp.ZenithRepository
                         response.Data = data;
                         response.CertificateName = cerificateName;
                         response.statusName = status;
+
                     }
                     else if (request.CertificationName == "FSSC")
                     {
