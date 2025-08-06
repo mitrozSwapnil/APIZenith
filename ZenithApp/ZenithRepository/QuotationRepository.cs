@@ -29,7 +29,7 @@ namespace ZenithApp.ZenithRepository
 
         private readonly MongoDbService _mongoDbService;
 
-        
+
 
         private readonly IHttpContextAccessor _acc;
 
@@ -88,7 +88,7 @@ namespace ZenithApp.ZenithRepository
                         QuotationData = BsonDocument.Parse(JsonSerializer.Serialize(request.QuotationData))
                     };
 
-                    await _quoatation.InsertOneAsync(entity); 
+                    await _quoatation.InsertOneAsync(entity);
 
                     response.Message = "Quotation saved successfully.";
                     response.Success = true;
@@ -181,14 +181,14 @@ namespace ZenithApp.ZenithRepository
                     //var filter = Builders<BsonDocument>.Filter.Eq("_id", objectId);
 
                     var filter = Builders<BsonDocument>.Filter.And(
-    Builders<BsonDocument>.Filter.Eq("ApplicationId", request.ApplicationId),
-    Builders<BsonDocument>.Filter.Eq("Fk_Certificate", certificateObjectId)
-);
+                            Builders<BsonDocument>.Filter.Eq("ApplicationId", request.ApplicationId),
+                            Builders<BsonDocument>.Filter.Eq("Fk_Certificate", certificateObjectId)
+                        );
 
                     var result = tblCollection
-      .Find(filter)
-      .Sort(Builders<BsonDocument>.Sort.Descending("_id"))
-      .FirstOrDefault();
+                              .Find(filter)
+                              .Sort(Builders<BsonDocument>.Sort.Descending("_id"))
+                              .FirstOrDefault();
 
                     // Step 1: Fetch fees list from the fees collection
                     var feesList = _masterfees.Find(FilterDefinition<tbl_master_quotation_fees>.Empty).ToList();
@@ -241,12 +241,12 @@ namespace ZenithApp.ZenithRepository
                                 };
                             }).ToList(),
 
-                            FeeList = feesList.Select(f => new
-                            {
-                                f.Id,
-                                f.Activity_Name,
-                                f.Fees
-                            }).ToList()
+                        FeeList = feesList.Select(f => new
+                        {
+                            f.Id,
+                            f.Activity_Name,
+                            f.Fees
+                        }).ToList()
                     };
 
 
@@ -278,9 +278,9 @@ namespace ZenithApp.ZenithRepository
 
         protected override void Disposing()
         {
-           // throw new NotImplementedException();
+            // throw new NotImplementedException();
         }
 
-        
+
     }
 }
