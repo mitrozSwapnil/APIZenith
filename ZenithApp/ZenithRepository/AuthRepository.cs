@@ -116,7 +116,7 @@ namespace gmkRepositories
                 if (user.Password != request.password)
                     return CreateErrorResponse("Invalid password.", 400);
 
-                var role = _roles.Find(x => x.Id == user.Fk_RoleID).FirstOrDefault();
+                var role = _roles.Find(x => x.Id == user.Fk_RoleID).FirstOrDefault(); 
                 var userRole = role.roleName;
                 var token = GenerateJwtToken(user.Id, user.ContactNo, userRole);
 
