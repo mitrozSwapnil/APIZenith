@@ -21,6 +21,8 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_customer_Entity> _customerentity;
         private readonly IMongoCollection<tbl_Status> _status;
         private readonly IMongoCollection<tbl_ISO_Application> _iso;
+        private readonly IMongoCollection<tbl_ICMED_Application> _icmed;
+        private readonly IMongoCollection<tbl_IMDR_Application> _imdr;
         private readonly IMongoCollection<tbl_Application_Remark> _remark;
         private readonly IMongoCollection<tbl_Application_Threat> _threat;
         private readonly IMongoCollection<tbl_Master_Threat> _masterthreat;
@@ -52,6 +54,8 @@ namespace ZenithApp.ZenithRepository
             _customerentity = database.GetCollection<tbl_customer_Entity>("tbl_customer_Entity");
             _status = database.GetCollection<tbl_Status>("tbl_Status");
             _iso = database.GetCollection<tbl_ISO_Application>("tbl_ISO_Application");
+            _icmed = database.GetCollection<tbl_ICMED_Application>("tbl_ICMED_Application");
+            _imdr = database.GetCollection<tbl_IMDR_Application>("tbl_IMDR_Application");
             _remark = database.GetCollection<tbl_Application_Remark>("tbl_Application_Remark");
             _threat = database.GetCollection<tbl_Application_Threat>("tbl_Application_Threat");
             _masterthreat = database.GetCollection<tbl_Master_Threat>("tbl_Master_Threat");
@@ -138,10 +142,12 @@ namespace ZenithApp.ZenithRepository
                         response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                         response.Success = true;
                     }
-                    else if (department?.Trim().ToLower() == "fssc")
-                    {
+
+
+                   else if (department?.Trim().ToLower() == "icmed")
+                   {
                         // Fetch all applications assigned to the user in the certification department
-                        var applications = _fssc
+                        var applications = _iso
                             .Find(x => x.IsDelete == false && x.Fk_UserId == UserId)
                             .ToList();
                         foreach (var app in applications)
@@ -194,10 +200,72 @@ namespace ZenithApp.ZenithRepository
                         response.Message = "Dashboard fetched successfully.";
                         response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                         response.Success = true;
+                   }
+                    else if (department?.Trim().ToLower() == "imdr")
+                    {
+                        // Fetch all applications assigned to the user in the certification department
+                        var applications = _imdr
+
+                    else if (department?.Trim().ToLower() == "fssc")
+                    {
+                        // Fetch all applications assigned to the user in the certification department
+                        var applications = _fssc.Find(x => x.IsDelete == false && x.Fk_UserId == UserId)
+                            .ToList();
+                        foreach (var app in applications)
+                        {
+                            var masterCert = _masterCertificate.Find(x => x.Id == app.Fk_Certificate).FirstOrDefault();
+                            if (masterCert != null)
+                            {
+                                var dashboardRecord = new CustomerDashboardData
+                                {
+                                    Id = app.Id,
+                                    ApplicationId = app.ApplicationId,
+                                    CompanyName = app.Orgnization_Name,
+                                    Certification_Name = masterCert.Certificate_Name,
+                                    Status = (await _status.Find(x => x.Id == app.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
+                                    ReceiveDate = app.Application_Received_date,
+                                    AssignedUserName = _user.Find(x => x.Id == app.Fk_UserId).FirstOrDefault()?.FullName
+                                };
+                                dashboardList.Add(dashboardRecord);
+                            }
+                        }
+                        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                        {
+                            var searchTerm = request.SearchTerm.Trim().ToLower();
+                            dashboardList = dashboardList
+                                .Where(x =>
+                                    (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+                                    (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+                                )
+                                .ToList();
+                        }
+
+                        // Step 6 — Pagination
+                        var totalCount = dashboardList.Count;
+                        var skip = (request.PageNumber - 1) * request.PageSize;
+
+                        var paginatedList = dashboardList
+                            .Skip(skip)
+                            .Take(request.PageSize)
+                            .ToList();
+
+                        var pagination = new PageinationDto
+                        {
+                            PageNumber = request.PageNumber,
+                            PageSize = request.PageSize,
+                            TotalRecords = totalCount
+                        };
+
+                        response.Data = paginatedList;
+                        response.Pagination = pagination;
+                        response.Message = "Dashboard fetched successfully.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
                     }
+
                     else
                     {
-                        response.Message = "Login User Not a ISO Department";
+                        response.Message = "Login User Not a ICMED Department";
                         response.Success = false;
                         response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
                         response.ResponseCode = 1;
@@ -261,6 +329,20 @@ namespace ZenithApp.ZenithRepository
                     {
                         var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Id, request.applicationId);
                         var result = await _fssc.Find(filter).FirstOrDefaultAsync();
+
+                        response.Data = result;
+                    }
+                    else if (request.CertificationName == "ICMED")
+                    {
+                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var result = await _icmed.Find(filter).FirstOrDefaultAsync();
+
+                        response.Data = result;
+                    }
+                    else if (request.CertificationName == "IMDR")
+                    {
+                        var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var result = await _imdr.Find(filter).FirstOrDefaultAsync();
 
                         response.Data = result;
                     }
@@ -392,6 +474,7 @@ namespace ZenithApp.ZenithRepository
 
                         }
                     }
+
                     if (!string.IsNullOrEmpty(request.ApplicationId))
                     {
 
@@ -449,6 +532,9 @@ namespace ZenithApp.ZenithRepository
                         response.Success = true;
                         response.ResponseCode = 0;
                     }
+
+
+
 
                 }
                 catch (Exception ex)
@@ -578,6 +664,259 @@ namespace ZenithApp.ZenithRepository
                 catch (Exception ex)
                 {
                     response.Message = "SaveFSSCApplication Exception: " + ex.Message;
+                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                    response.Success = false;
+                }
+            }
+            else
+            {
+                response.Message = "Invalid token.";
+                response.HttpStatusCode = HttpStatusCode.Unauthorized;
+                response.Success = false;
+            }
+
+            return response;
+        }
+
+        public async Task<addReviewerApplicationResponse> SaveICMEDApplication(addICMEDApplicationRequest request)
+        {
+            var response = new addReviewerApplicationResponse();
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
+            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
+            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+
+            if (userType?.Trim().ToLower() == "reviewer")
+            {
+                try
+                {
+                    var now = DateTime.Now;
+                    bool? isFinalSubmit = null;
+                    DateTime? submitDate = null;
+                    string status = "687a2925694d00158c9bf265";
+
+                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
+                    {
+                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
+
+                        if (isFinalSubmit == true)
+                        {
+                            submitDate = now;
+                            status = "687a2925694d00158c9bf267"; // Final submit
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(request.Id))
+                    {
+                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.Id);
+
+                        // Clear sub-lists
+                        var clearSubLists = Builders<tbl_ICMED_Application>.Update
+                            .Set(x => x.Technical_Areas, new List<TechnicalAreasList>())
+                            .Set(x => x.Accreditations, new List<AccreditationsList>())
+                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>())
+                            .Set(x => x.auditLists, new List<stage1AndStage2Audit>())
+                            .Set(x => x.serveillannceAuditLists, new List<ServeillannceAudit>())
+                            .Set(x => x.reCertificationAudits, new List<ReCertificationAudit>())
+                            .Set(x => x.transferAudits, new List<TransferAudit>())
+                            .Set(x => x.specialAudits, new List<SpecialAudit>())
+                            .Set(x => x.productCategoryAndSubs, new List<ProductCategoryAndSubCategoryList>())
+                            .Set(x => x.hACCPLists, new List<HACCPList>())
+                            .Set(x => x.standardsLists, new List<StandardsList>())
+                            .Set(x => x.categoryLists, new List<CategoryList>())
+                            .Set(x => x.subCategoryLists, new List<SubCategoryList>());
+
+                            await _icmed.UpdateOneAsync(filter, clearSubLists);
+
+                        // Update main fields
+                        var update = Builders<tbl_ICMED_Application>.Update
+                            .Set(x => x.ApplicationId, request.ApplicationId)
+                            .Set(x => x.Application_Received_date, request.Application_Received_date)
+                            .Set(x => x.ApplicationReviewDate, request.ApplicationReviewDate)
+                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
+                            .Set(x => x.Constituation_of_Orgnization, request.Constituation_of_Orgnization)
+                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
+                            .Set(x => x.AssignTo, request.AssignTo)
+                            //.Set(x => x.remark,)
+                            //.Set(x => x.Seasonality_Factor, request.Seasonality_Factor)
+                            //.Set(x => x.AnyAllergens, request.AnyAllergens)
+                            .Set(x => x.Audit_Type, request.Audit_Type)
+                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
+                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
+                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
+                            .Set(x => x.Audit_Lang, request.Audit_Lang)
+                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
+                            .Set(x => x.IsInterpreter, request.IsInterpreter)
+                            .Set(x => x.IsMultisitesampling, request.IsMultisitesampling)
+                            .Set(x => x.Total_site, request.Total_site)
+                            .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
+                            .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
+                            .Set(x => x.Status, status)
+                            .Set(x => x.IsDelete, request.IsDelete ?? false)
+                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
+                            .Set(x => x.Fk_UserId, request.Fk_UserId ?? UserId)
+                            .Set(x => x.UpdatedAt, now)
+                            .Set(x => x.UpdatedBy, UserId)
+                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
+                            .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
+                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>())
+                            .Set(x => x.auditLists, request.auditLists ?? new List<stage1AndStage2Audit>())
+                            .Set(x => x.serveillannceAuditLists, request.serveillannceAuditLists ?? new List<ServeillannceAudit>())
+                            .Set(x => x.reCertificationAudits, request.reCertificationAudits ?? new List<ReCertificationAudit>())
+                            .Set(x => x.transferAudits, request.transferAudits ?? new List<TransferAudit>())
+                            .Set(x => x.specialAudits, request.specialAudits ?? new List<SpecialAudit>())
+                            .Set(x => x.productCategoryAndSubs, request.productCategoryAndSubs ?? new List<ProductCategoryAndSubCategoryList>())
+                            .Set(x => x.hACCPLists, request.hACCPLists ?? new List<HACCPList>())
+                            .Set(x => x.standardsLists, request.standardsLists ?? new List<StandardsList>())
+                            .Set(x => x.categoryLists, request.categoryLists ?? new List<CategoryList>())
+                            .Set(x => x.subCategoryLists, request.subCategoryLists ?? new List<SubCategoryList>());
+
+                        await _icmed.UpdateOneAsync(filter, update);
+
+                        response.Message = "ICMED Application saved successfully.";
+                        response.HttpStatusCode = HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Message = "SaveICMEDApplication Exception: " + ex.Message;
+                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                    response.Success = false;
+                }
+            }
+            else
+            {
+                response.Message = "Invalid token.";
+                response.HttpStatusCode = HttpStatusCode.Unauthorized;
+                response.Success = false;
+            }
+
+            return response;
+        }
+
+
+        public async Task<addReviewerApplicationResponse> SaveIMDRApplication(addIMDRApplicationRequest request)
+        {
+            var response = new addReviewerApplicationResponse();
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
+            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
+            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+
+            if (userType?.Trim().ToLower() == "reviewer")
+            {
+                try
+                {
+                    var now = DateTime.Now;
+                    bool? isFinalSubmit = null;
+                    DateTime? submitDate = null;
+                    string status = "687a2925694d00158c9bf265";
+
+                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
+                    {
+                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
+
+                        if (isFinalSubmit == true)
+                        {
+                            submitDate = now;
+                            status = "687a2925694d00158c9bf267"; // Final submit
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(request.Id))
+                    {
+                        var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.Id);
+
+                        // Clear sub-lists
+                        var clearSubLists = Builders<tbl_IMDR_Application>.Update
+                            .Set(x => x.Technical_Areas, new List<TechnicalAreasList>())
+                            .Set(x => x.Accreditations, new List<AccreditationsList>())
+                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>())
+                            .Set(x => x.auditLists, new List<stage1AndStage2Audit>())
+                            .Set(x => x.serveillannceAuditLists, new List<ServeillannceAudit>())
+                            .Set(x => x.reCertificationAudits, new List<ReCertificationAudit>())
+                            .Set(x => x.transferAudits, new List<TransferAudit>())
+                            .Set(x => x.specialAudits, new List<SpecialAudit>())
+                            .Set(x => x.productCategoryAndSubs, new List<ProductCategoryAndSubCategoryList>())
+                            .Set(x => x.hACCPLists, new List<HACCPList>())
+                            .Set(x => x.standardsLists, new List<StandardsList>())
+                            .Set(x => x.categoryLists, new List<CategoryList>())
+                            .Set(x => x.subCategoryLists, new List<SubCategoryList>());
+
+                        await _imdr.UpdateOneAsync(filter, clearSubLists);
+
+                        // Update main fields
+                        var update = Builders<tbl_IMDR_Application>.Update
+                            .Set(x => x.ApplicationId, request.ApplicationId)
+                            .Set(x => x.Application_Received_date, request.Application_Received_date)
+                            .Set(x => x.ApplicationReviewDate, request.ApplicationReviewDate)
+                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
+                            .Set(x => x.Constituation_of_Orgnization, request.Constituation_of_Orgnization)
+                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
+                            .Set(x => x.AssignTo, request.AssignTo)
+                            //.Set(x => x.remark,)
+                            //.Set(x => x.Seasonality_Factor, request.Seasonality_Factor)
+                            //.Set(x => x.AnyAllergens, request.AnyAllergens)
+                            .Set(x => x.Audit_Type, request.Audit_Type)
+                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
+                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
+                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
+                            .Set(x => x.Audit_Lang, request.Audit_Lang)
+                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
+                            .Set(x => x.IsInterpreter, request.IsInterpreter)
+                            .Set(x => x.IsMultisitesampling, request.IsMultisitesampling)
+                            .Set(x => x.Total_site, request.Total_site)
+                            .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
+                            .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
+                            .Set(x => x.Status, status)
+                            .Set(x => x.IsDelete, request.IsDelete ?? false)
+                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
+                            .Set(x => x.Fk_UserId, request.Fk_UserId ?? UserId)
+                            .Set(x => x.UpdatedAt, now)
+                            .Set(x => x.UpdatedBy, UserId)
+                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
+                            .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
+                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>())
+                            .Set(x => x.auditLists, request.auditLists ?? new List<stage1AndStage2Audit>())
+                            .Set(x => x.serveillannceAuditLists, request.serveillannceAuditLists ?? new List<ServeillannceAudit>())
+                            .Set(x => x.reCertificationAudits, request.reCertificationAudits ?? new List<ReCertificationAudit>())
+                            .Set(x => x.transferAudits, request.transferAudits ?? new List<TransferAudit>())
+                            .Set(x => x.specialAudits, request.specialAudits ?? new List<SpecialAudit>())
+                            .Set(x => x.productCategoryAndSubs, request.productCategoryAndSubs ?? new List<ProductCategoryAndSubCategoryList>())
+                            .Set(x => x.hACCPLists, request.hACCPLists ?? new List<HACCPList>())
+                            .Set(x => x.standardsLists, request.standardsLists ?? new List<StandardsList>())
+                            .Set(x => x.categoryLists, request.categoryLists ?? new List<CategoryList>())
+                            .Set(x => x.subCategoryLists, request.subCategoryLists ?? new List<SubCategoryList>());
+
+                        await _imdr.UpdateOneAsync(filter, update);
+
+                        response.Message = "IMDR Application saved successfully.";
+                        response.HttpStatusCode = HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Message = "SaveIMDRApplication Exception: " + ex.Message;
                     response.HttpStatusCode = HttpStatusCode.InternalServerError;
                     response.Success = false;
                 }

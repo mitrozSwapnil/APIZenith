@@ -29,6 +29,8 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_Master_Remark> _masterremark;
         private readonly IMongoCollection<tbl_ISO_Application> _iso;
         private readonly IMongoCollection<tbl_FSSC_Application> _fssc;
+        private readonly IMongoCollection<tbl_ICMED_Application>_icmed;
+        private readonly IMongoCollection<tbl_IMDR_Application> _imdr;
         private readonly MongoDbService _mongoDbService;
 
 
@@ -55,6 +57,8 @@ namespace ZenithApp.ZenithRepository
             _masterthreat = database.GetCollection<tbl_Master_Threat>("tbl_Master_Threat");
             _iso = database.GetCollection<tbl_ISO_Application>("tbl_ISO_Application");
             _fssc = database.GetCollection<tbl_FSSC_Application>("tbl_FSSC_Application");
+            _icmed = database.GetCollection<tbl_ICMED_Application>("tbl_ICMED_Application");
+            _imdr = database.GetCollection<tbl_IMDR_Application>("tbl_IDMR_Application");
             _mongoDbService = mongoDbService;
             _acc = acc;
         }
@@ -298,6 +302,7 @@ namespace ZenithApp.ZenithRepository
                                     Recertification_OnSite_ManDays = 0,        // You can map if you have this field elsewhere
                                     Recertification_OffSite_ManDays = 0,      // Same here
                                     AdditionalComments = x.Comment,
+                                    
                                     Note = x.Note
                                 }).ToList();
 
@@ -386,26 +391,98 @@ namespace ZenithApp.ZenithRepository
                                         });
                                         break;
 
-                                    //case "ICMED":
-                                    //    await _icmedApplication.InsertOneAsync(new tbl_ICMED_Application
-                                    //    {
-                                    //        ApplicationId = request.ApplicationId,
-                                    //        CreatedAt = DateTime.Now,
-                                    //        // other fields...
-                                    //    });
-                                    //    break;
+                                    case "ICMED":
+                                        await _icmed.InsertOneAsync(new tbl_ICMED_Application
+                                        {
+                                            ApplicationId = request.ApplicationId,
+                                            Application_Received_date = DateTime.Now,
+                                            Orgnization_Name = customerapp.Orgnization_Name,
+                                            Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
+                                            Fk_Certificate = application.Fk_Certificates,
+                                            AssignTo = request.UserId,
+                                            Audit_Type = "",  // Set based on logic or request
+                                            Scop_of_Certification = "",
+                                            Technical_Areas = new List<TechnicalAreasList>(),
+                                            Accreditations = new List<AccreditationsList>(),
+                                            categoryLists = new List<CategoryList>(),
+                                            subCategoryLists = new List<SubCategoryList>(),
+                                            Availbility_of_TechnicalAreas = false,
+                                            Availbility_of_Auditor = false,
+                                            Audit_Lang = "",
+                                            IsInterpreter = false,
+                                            IsMultisitesampling = false,
+                                            remark="",
+                                            Total_site = customerSiteDetailsList?.Count ?? 0,  // <-- Set site count
+                                            Sample_Site = new List<LabelValue>(),   // If required, fill here
+                                            Shift_Details = new List<LabelValue>(), // If required, fill here
+                                            CustomerSites = customerSiteDetailsList,
+                                            KeyPersonnels = keyPersonnelsList,
+                                            MandaysLists = mandaysList,
 
+                                            CreatedAt = DateTime.Now,
+                                            CreatedBy = userId,
+                                            Status = status.Id,
+                                            IsDelete = false,
+                                            IsFinalSubmit = false,
+                                            Fk_UserId = request.UserId
 
+                                        });
+                                    break;
 
-                                    //case "Other1":
-                                    //    await _other1Application.InsertOneAsync(new tbl_Other1_Application { /*...*/ });
-                                    //    break;
+                                    case "IMDR":
+                                        await _imdr.InsertOneAsync(new tbl_IMDR_Application
+                                        {
+                                            ApplicationId = request.ApplicationId,
+                                            Application_Received_date = DateTime.Now,
+                                            Orgnization_Name = customerapp.Orgnization_Name,
+                                            Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
+                                            Fk_Certificate = application.Fk_Certificates,
+                                            AssignTo = request.UserId,
+                                            Audit_Type = "",  // Set based on logic or request
+                                            Scop_of_Certification = "",
+                                            Technical_Areas = new List<TechnicalAreasList>(),
+                                            Accreditations = new List<AccreditationsList>(),
+                                            categoryLists = new List<CategoryList>(),
+                                            subCategoryLists = new List<SubCategoryList>(),
+                                            Availbility_of_TechnicalAreas = false,
+                                            Availbility_of_Auditor = false,
+                                            Audit_Lang = "",
+                                            IsInterpreter = false,
+                                            IsMultisitesampling = false,
+                                            masterfile = "",
+                                            Total_site = customerSiteDetailsList?.Count ?? 0,  // <-- Set site count
+                                            Sample_Site = new List<LabelValue>(),   // If required, fill here
+                                            Shift_Details = new List<LabelValue>(), // If required, fill here
+                                            CustomerSites = customerSiteDetailsList,
+                                            KeyPersonnels = keyPersonnelsList,
+                                            MandaysLists = mandaysList,
 
-                                    // Add more cases as per your certificates...
+                                            CreatedAt = DateTime.Now,
+                                            CreatedBy = userId,
+                                            Status = status.Id,
+                                            IsDelete = false,
+                                            IsFinalSubmit = false,
+                                            Fk_UserId = request.UserId
 
-                                    default:
-                                        // Handle unknown certification if needed
+                                        });
                                         break;
+
+
+
+                                        //case "Other1":
+                                        //    await _other1Application.InsertOneAsync(new tbl_Other1_Application { /*...*/ });
+                                        //    break;
+
+                                        // Add more cases as per your certificates...
+
+                                        //default:
+                                        //    // Handle unknown certification if needed
+                                        //    break;
+
+
+
+
+
                                 }
 
 
@@ -451,7 +528,7 @@ namespace ZenithApp.ZenithRepository
 
             return response;
         }
-
+            
         public async Task<userDropdownResponse> GetDropdown(userDropdownRequest request)
         {
             var response = new userDropdownResponse();
@@ -577,6 +654,120 @@ namespace ZenithApp.ZenithRepository
                                     });
 
                                 break;
+
+                                case "ICMED":
+                                    await _icmed.InsertOneAsync(new tbl_ICMED_Application
+                                    {
+                                        Application_Received_date = application.Application_Received_date,
+                                        Orgnization_Name = application.Orgnization_Name,
+                                        Constituation_of_Orgnization = application.Constituation_of_Orgnization,
+                                        Fk_Certificate = application.Fk_Certificate,
+                                        AssignTo = application.AssignTo,
+                                        Audit_Type = application.Audit_Type,
+                                        Scop_of_Certification = application.Scop_of_Certification,
+                                        Availbility_of_TechnicalAreas = application.Availbility_of_TechnicalAreas,
+                                        Availbility_of_Auditor = application.Availbility_of_Auditor,
+                                        Audit_Lang = application.Audit_Lang,
+                                        //ActiveState = application.ActiveState ?? 1,
+                                        IsInterpreter = application.IsInterpreter,
+                                        IsMultisitesampling = application.IsMultisitesampling,
+                                        Total_site = application.Total_site,
+                                        Sample_Site = application.Sample_Site ?? new List<LabelValue>(),
+                                        Shift_Details = application.Shift_Details ?? new List<LabelValue>(),
+                                        Status = "68835335b8054bb3d2914cae",
+                                        Application_Status = "68835335b8054bb3d2914cae",
+                                        IsDelete = application.IsDelete ?? false,
+                                        IsFinalSubmit = false,
+                                        Fk_UserId = request.UserId,
+                                        Technical_Areas = application.Technical_Areas ?? new List<TechnicalAreasList>(),
+                                        Accreditations = application.Accreditations ?? new List<AccreditationsList>(),
+                                        CustomerSites = application.CustomerSites ?? new List<ReviewerSiteDetails>(),
+                                        reviewerKeyPersonnel = application.reviewerKeyPersonnel ?? new List<ReviewerKeyPersonnelList>(),
+                                        MandaysLists = application.MandaysLists ?? new List<ReviewerAuditMandaysList>(),
+                                        ReviewerThreatList = application.ReviewerThreatList ?? new List<ReviewerThreatList>(),
+                                        ReviewerRemarkList = application.ReviewerRemarkList ?? new List<ReviewerRemarkList>(),
+                                        CreatedAt = DateTime.Now,
+                                        CreatedBy = request.UserId
+                                    });
+
+                                    break;
+
+                                case "FSSC":
+                                    await _fssc.InsertOneAsync(new tbl_FSSC_Application
+                                    {
+                                        Application_Received_date = application.Application_Received_date,
+                                        Orgnization_Name = application.Orgnization_Name,
+                                        Constituation_of_Orgnization = application.Constituation_of_Orgnization,
+                                        Fk_Certificate = application.Fk_Certificate,
+                                        AssignTo = application.AssignTo,
+                                        Audit_Type = application.Audit_Type,
+                                        Scop_of_Certification = application.Scop_of_Certification,
+                                        Availbility_of_TechnicalAreas = application.Availbility_of_TechnicalAreas,
+                                        Availbility_of_Auditor = application.Availbility_of_Auditor,
+                                        Audit_Lang = application.Audit_Lang,
+                                        ActiveState = application.ActiveState ?? 1,
+                                        IsInterpreter = application.IsInterpreter,
+                                        IsMultisitesampling = application.IsMultisitesampling,
+                                        Total_site = application.Total_site,
+                                        Sample_Site = application.Sample_Site ?? new List<LabelValue>(),
+                                        Shift_Details = application.Shift_Details ?? new List<LabelValue>(),
+                                        Status = "68835335b8054bb3d2914cae",
+                                        //Application_Status = "68835335b8054bb3d2914cae",
+                                        IsDelete = application.IsDelete ?? false,
+                                        IsFinalSubmit = false,
+                                        Fk_UserId = request.UserId,
+                                        Technical_Areas = application.Technical_Areas ?? new List<TechnicalAreasList>(),
+                                        Accreditations = application.Accreditations ?? new List<AccreditationsList>(),
+                                        CustomerSites = application.CustomerSites ?? new List<ReviewerSiteDetails>(),
+                                        reviewerKeyPersonnel = application.reviewerKeyPersonnel ?? new List<ReviewerKeyPersonnelList>(),
+                                        MandaysLists = application.MandaysLists ?? new List<ReviewerAuditMandaysList>(),
+                                        ReviewerThreatList = application.ReviewerThreatList ?? new List<ReviewerThreatList>(),
+                                        ReviewerRemarkList = application.ReviewerRemarkList ?? new List<ReviewerRemarkList>(),
+                                        CreatedAt = DateTime.Now,
+                                        CreatedBy = request.UserId
+                                    });
+
+                                    break;
+
+                                case "IMDR":
+                                    await _imdr.InsertOneAsync(new tbl_IMDR_Application
+                                    {
+                                        Application_Received_date = application.Application_Received_date,
+                                        Orgnization_Name = application.Orgnization_Name,
+                                        Constituation_of_Orgnization = application.Constituation_of_Orgnization,
+                                        Fk_Certificate = application.Fk_Certificate,
+                                        AssignTo = application.AssignTo,
+                                        Audit_Type = application.Audit_Type,
+                                        Scop_of_Certification = application.Scop_of_Certification,
+                                        Availbility_of_TechnicalAreas = application.Availbility_of_TechnicalAreas,
+                                        Availbility_of_Auditor = application.Availbility_of_Auditor,
+                                        Audit_Lang = application.Audit_Lang,
+                                        //ActiveState = application.ActiveState ?? 1,
+                                        IsInterpreter = application.IsInterpreter,
+                                        IsMultisitesampling = application.IsMultisitesampling,
+                                        Total_site = application.Total_site,
+                                        Sample_Site = application.Sample_Site ?? new List<LabelValue>(),
+                                        Shift_Details = application.Shift_Details ?? new List<LabelValue>(),
+                                        Status = "68835335b8054bb3d2914cae",
+                                        Application_Status = "68835335b8054bb3d2914cae",
+                                        IsDelete = application.IsDelete ?? false,
+                                        IsFinalSubmit = false,
+                                        Fk_UserId = request.UserId,
+                                        Technical_Areas = application.Technical_Areas ?? new List<TechnicalAreasList>(),
+                                        Accreditations = application.Accreditations ?? new List<AccreditationsList>(),
+                                        CustomerSites = application.CustomerSites ?? new List<ReviewerSiteDetails>(),
+                                        reviewerKeyPersonnel = application.reviewerKeyPersonnel ?? new List<ReviewerKeyPersonnelList>(),
+                                        MandaysLists = application.MandaysLists ?? new List<ReviewerAuditMandaysList>(),
+                                        ReviewerThreatList = application.ReviewerThreatList ?? new List<ReviewerThreatList>(),
+                                        ReviewerRemarkList = application.ReviewerRemarkList ?? new List<ReviewerRemarkList>(),
+                                        CreatedAt = DateTime.Now,
+                                        CreatedBy = request.UserId
+                                    });
+
+                                    break;
+
+
+
                             }
 
 
@@ -662,6 +853,20 @@ namespace ZenithApp.ZenithRepository
 
                         response.Data = result;
                     }
+                    else if (request.CertificationName == "ICMED")
+                    {
+                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var result = await _icmed.Find(filter).FirstOrDefaultAsync();
+
+                        response.Data = result;
+                    }
+                    else if (request.CertificationName == "IDMR")
+                    {
+                        var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var result = await _imdr.Find(filter).FirstOrDefaultAsync();
+
+                        response.Data = result;
+                    }
                     else
                     {
                         response.Message = "Invalid Certification Name.";
@@ -675,22 +880,7 @@ namespace ZenithApp.ZenithRepository
                     response.Success = true;
                     response.ResponseCode = 0;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                     
 
 
 
