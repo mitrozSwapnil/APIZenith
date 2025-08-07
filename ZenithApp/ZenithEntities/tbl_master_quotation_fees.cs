@@ -7,9 +7,11 @@ namespace ZenithApp.ZenithEntities
     {
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
+
         public string Id { get; set; } 
 
         
+
         public string Activity_Name { get; set; }
 
         public double Fees { get; set; }

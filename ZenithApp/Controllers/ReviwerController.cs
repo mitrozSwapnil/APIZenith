@@ -17,6 +17,7 @@ namespace ZenithApp.Controllers
             _reviwerRepository = reviwerRepository;
             _acc = acc;
         }
+
         [HttpPost("GetReviewerDashboard")]
         public IActionResult GetReviewerDashboard(getDashboardRequest model)
         {
@@ -27,6 +28,7 @@ namespace ZenithApp.Controllers
             return this.ProcessRequest<getDashboardResponse>(model);
         }
 
+
         [HttpPost("GetReviewerApplication")]
         public IActionResult GetReviewerApplication(getReviewerApplicationRequest model)
         {
@@ -36,6 +38,8 @@ namespace ZenithApp.Controllers
             _acc.HttpContext?.Session.SetString("UserId", UserId);
             return this.ProcessRequest<getReviewerApplicationResponse>(model);
         }
+
+
         [HttpPost("SaveISOApplication")]
         public IActionResult SaveISOApplication(addReviewerApplicationRequest model)
         {
@@ -56,6 +60,27 @@ namespace ZenithApp.Controllers
         }
 
 
+        [HttpPost("SaveFSSCApplication")]
+        public IActionResult SaveFSSCApplication(addFsscApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
+
+        [HttpPost("SaveICMEDApplication")]
+        public IActionResult SaveICMEDApplication(addICMEDApplicationRequest model)
+        {
+             var claims = HttpContext.User.Claims;
+             var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+             var UserId = userNameDetails.Value;
+             _acc.HttpContext?.Session.SetString("UserId", UserId);
+             return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
+
+
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
 
@@ -71,6 +96,13 @@ namespace ZenithApp.Controllers
             {
                 return _reviwerRepository.SaveISOApplication(request as addReviewerApplicationRequest).Result;
             }
+
+            else if (action == nameof(SaveICMEDApplication))
+            {
+                return _reviwerRepository.SaveICMEDApplication(request as addICMEDApplicationRequest).Result;
+            }
+
+
             else if (action == nameof(SaveFSSCApplication))
             {
                 return _reviwerRepository.SaveFSSCApplication(request as addFsscApplicationRequest).Result;
@@ -79,7 +111,8 @@ namespace ZenithApp.Controllers
 
 
 
-             throw new NotImplementedException();
+
+            throw new NotImplementedException();
             
         }
         protected override void Disposing()

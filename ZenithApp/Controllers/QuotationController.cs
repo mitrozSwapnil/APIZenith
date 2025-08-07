@@ -21,16 +21,16 @@ namespace ZenithApp.Controllers
         }
 
 
-        [HttpPost("AddFees")]
-        public IActionResult AddFees([FromBody] tbl_master_quotation_fees fees)
-        {
-            if (fees == null)
-                return BadRequest("Invalid data.");
+        //[HttpPost("AddFees")]
+        //public IActionResult AddFees([FromBody] tbl_master_quotation_fees fees)
+        //{
+        //    if (fees == null)
+        //        return BadRequest("Invalid data.");
 
-            _quotationRepository.AddFees(fees); 
+        //    _quotationRepository.AddFees(fees); 
 
-            return Ok(new { message = "Successfully added" });
-        }
+        //    return Ok(new { message = "Successfully added" });
+        //}
 
         [HttpPost("CreateQuotation")]
         public IActionResult CreateQuotation(createQuotationRequest model)
