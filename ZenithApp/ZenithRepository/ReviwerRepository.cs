@@ -144,8 +144,8 @@ namespace ZenithApp.ZenithRepository
                     }
 
 
-                   else if (department?.Trim().ToLower() == "icmed")
-                   {
+                    else if (department?.Trim().ToLower() == "icmed")
+                    {
                         // Fetch all applications assigned to the user in the certification department
                         var applications = _iso
                             .Find(x => x.IsDelete == false && x.Fk_UserId == UserId)
@@ -200,12 +200,12 @@ namespace ZenithApp.ZenithRepository
                         response.Message = "Dashboard fetched successfully.";
                         response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                         response.Success = true;
-                   }
+                    }
                     else if (department?.Trim().ToLower() == "imdr")
                     {
                         // Fetch all applications assigned to the user in the certification department
-                        var applications = _imdr
-
+                        //var applications = _imdr
+                    }
                     else if (department?.Trim().ToLower() == "fssc")
                     {
                         // Fetch all applications assigned to the user in the certification department
