@@ -10,6 +10,8 @@ namespace ZenithApp.ZenithEntities
         [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; }
         public string? ApplicationId { get; set; }
+        public string? ApplicationName { get; set; }
+        public string? CertiFicateName { get; set; }
         public DateTime? Application_Received_date { get; set; }
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
@@ -20,6 +22,8 @@ namespace ZenithApp.ZenithEntities
         [BsonRepresentation(BsonType.ObjectId)]
         public string? AssignTo { get; set; }
 
+        //[BsonRepresentation(BsonType.ObjectId)]
+        //public List<string> AssignTo { get; set; } = new List<string>();
 
         public string? Audit_Type { get; set; }
         public string? Scop_of_Certification { get; set; }
@@ -45,6 +49,7 @@ namespace ZenithApp.ZenithEntities
 
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Status { get; set; }
+        public string? ActiveReviwer { get; set; }
         public string? Application_Status { get; set; }
         public bool? IsDelete { get; set; }
         public bool? IsFinalSubmit { get; set; }

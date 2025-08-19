@@ -19,7 +19,7 @@ namespace ZenithApp.ZenithMessage
         public string? Role { get; set; }
         public string? email { get; set; }
         public string? mobileNo { get; set; }
-        public string? Department { get; set; }
+        public List<string>? Department { get; set; }
         public DateTime? check_In { get; set; }
         public DateTime? check_Out { get; set; }
     }

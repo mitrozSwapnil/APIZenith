@@ -9,6 +9,7 @@
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
         public string? Fk_Certificate { get; set; }
+        public string? ActiveReviwer { get; set; }
         public string? AssignTo { get; set; }
         public string? Audit_Type { get; set; }
         public string? Scop_of_Certification { get; set; }

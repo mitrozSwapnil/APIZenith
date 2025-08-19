@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
 using ZenithApp.ZenithRepository;
 
@@ -19,6 +20,24 @@ namespace ZenithApp.Controllers
             _adminRepository = adminRepository;
             _acc = acc;
         }
+        //public ActionResult<List<tbl_master_designation>> Getdesignation()
+        //{
+        //    var data = _adminRepository.Getdesignation();
+
+        //    if (data == null || data.Count == 0)
+        //        return NotFound();
+
+        //    return Ok(data);
+        //}
+
+
+
+        //[HttpPost("Add-designation")]
+        //public ActionResult<tbl_master_designation> CreateMasterDesignation(tbl_master_designation designation)
+        //{
+        //    _adminRepository.CreateMasterDesignation(designation);
+        //    return CreatedAtAction(nameof(Getdesignation), designation);
+        //}
 
         [HttpPost("GetAdminDashboard")]
         public IActionResult GetAdminDashboard(getDashboardRequest model)
@@ -79,6 +98,52 @@ namespace ZenithApp.Controllers
             _acc.HttpContext?.Session.SetString("UserId", UserId);
             return this.ProcessRequest<addReviewerApplicationResponse>(model);
         }
+        [HttpPost("SaveFSSCApplication")]
+        public IActionResult SaveFSSCApplication(addFsscApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
+        [HttpPost("SaveICMEDApplication")]
+        public IActionResult SaveICMEDApplication(addICMEDApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
+        [HttpPost("SaveICMED_Plus_Application")]
+        public IActionResult SaveICMED_Plus_Application(addICMEDApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
+
+        [HttpPost("SaveIMDRApplication")]
+        public IActionResult SaveIMDRApplication(addIMDRApplicationRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<addReviewerApplicationResponse>(model);
+        }
+        [HttpPost("GetHistory")]
+        public IActionResult GetHistory(gethistoryRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<gethistoryResponse>(model);
+        }
 
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
@@ -106,6 +171,27 @@ namespace ZenithApp.Controllers
             else if (action == nameof(SaveISOApplication))
             {
                 return _adminRepository.SaveISOApplication(request as addReviewerApplicationRequest).Result;
+            }
+            else if (action == nameof(SaveISOApplication))
+            {
+                return _adminRepository.SaveFSSCApplication(request as addFsscApplicationRequest).Result;
+            }
+            else if (action == nameof(SaveICMEDApplication))
+            {
+                return _adminRepository.SaveICMEDApplication(request as addICMEDApplicationRequest).Result;
+            }
+            else if (action == nameof(SaveICMED_Plus_Application))
+            {
+                return _adminRepository.SaveICMED_Plus_Application(request as addICMEDApplicationRequest).Result;
+            }
+
+            else if (action == nameof(SaveIMDRApplication))
+            {
+                return _adminRepository.SaveIMDRApplication(request as addIMDRApplicationRequest).Result;
+            }
+            else if (action == nameof(GetHistory))
+            {
+                return _adminRepository.GetHistory(request as gethistoryRequest).Result;
             }
 
             throw new NotImplementedException();
