@@ -5,6 +5,7 @@ namespace ZenithApp.ZenithMessage
     public class addCustomerApplicationRequest : BaseRequest
     {
         public string ApplicationId { get; set; }  // For identifying the record
+        public string ApplicationName { get; set; }  // For identifying the record
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
         public string? EmailId { get; set; }

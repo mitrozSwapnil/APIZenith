@@ -21,6 +21,10 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_customer_Entity> _customerentity;
         private readonly IMongoCollection<tbl_master_certificates> _mastercertificate;
         private readonly IMongoCollection<tbl_Status> _status;
+        private readonly IMongoCollection<tbl_master_technicalArea> _technicalarea;
+        private readonly IMongoCollection<tbl_master_Audit> _masterAudit;
+        private readonly IMongoCollection<tbl_master_designation> _masterdesignation;
+
 
 
 
@@ -41,6 +45,9 @@ namespace ZenithApp.ZenithRepository
             _customerentity = database.GetCollection<tbl_customer_Entity>("tbl_customer_Entity");
             _mastercertificate = database.GetCollection<tbl_master_certificates>("tbl_master_certificates");
             _status = database.GetCollection<tbl_Status>("tbl_Status");
+            _technicalarea = database.GetCollection<tbl_master_technicalArea>("tbl_master_technicalArea");
+            _masterAudit = database.GetCollection<tbl_master_Audit>("tbl_master_audit");
+            _masterdesignation = database.GetCollection<tbl_master_designation>("tbl_master_designation");
 
 
 
@@ -118,6 +125,7 @@ namespace ZenithApp.ZenithRepository
                             dashboardList.Add(new CustomerDashboardData
                             {
                                 Id = app.Id,
+                                ApplicationName = app.ApplicationId,
                                 ApplicationId = app.ApplicationId,
                                 Certification_Id = masterCert.Id,
                                 Certification_Name = masterCert.Certificate_Name,
@@ -155,8 +163,6 @@ namespace ZenithApp.ZenithRepository
             }
             return response;
         }
-
-
 
         public async Task<getDashboardResponse> GetCustomerDashboard(getDashboardRequest request)
         {
@@ -204,7 +210,8 @@ namespace ZenithApp.ZenithRepository
                     dashboardList.Add(new CustomerDashboardData
                     {
                         Id = app.Id,
-                        ApplicationId = app.ApplicationId,
+                        ApplicationName = app.ApplicationId,
+                        ApplicationId =app.ApplicationId,
                         Status = _status
                                     .Find(x => x.Id == app.status)
                                     .FirstOrDefault()?.StatusName ?? "Pending",
@@ -221,7 +228,7 @@ namespace ZenithApp.ZenithRepository
                     var searchTerm = request.SearchTerm.Trim().ToLower();
                     dashboardList = dashboardList
                         .Where(x =>
-                            (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+                            (!string.IsNullOrEmpty(x.ApplicationName) && x.ApplicationName.ToLower().Contains(searchTerm)) ||
                             (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
                         )
                         .ToList();
@@ -260,11 +267,6 @@ namespace ZenithApp.ZenithRepository
 
             return response;
         }
-
-
-
-
-
 
 
         public addCustomerApplicationResponse AddCustomerApplication(addCustomerApplicationRequest request)
@@ -316,6 +318,7 @@ namespace ZenithApp.ZenithRepository
                         {
                             var updateDefinition = Builders<tbl_customer_application>.Update
                                 .Set(x => x.Orgnization_Name, string.IsNullOrWhiteSpace(request.Orgnization_Name) ? existingApplication.Orgnization_Name : request.Orgnization_Name)
+                                .Set(x => x.ApplicationId, string.IsNullOrWhiteSpace(request.ApplicationName) ? existingApplication.ApplicationId : request.ApplicationName)
                                 .Set(x => x.Constituation_of_Orgnization, string.IsNullOrWhiteSpace(request.Constituation_of_Orgnization) ? existingApplication.Constituation_of_Orgnization : request.Constituation_of_Orgnization)
                                 .Set(x => x.EmailId, string.IsNullOrWhiteSpace(request.EmailId) ? existingApplication.EmailId : request.EmailId)
                                 .Set(x => x.Expected_Audit_Date, request.Expected_Audit_Date ?? existingApplication.Expected_Audit_Date)
@@ -1364,12 +1367,24 @@ namespace ZenithApp.ZenithRepository
                     if (request.type.Trim().ToLower() == "userlist")
                     {
                         var userList = await _user
-                            .Find(x => x.IsDelete == 0 && x.Fk_RoleID== "686fc53af41f7edee9b89cd6")
+                            .Find(x => x.IsDelete == 0 && x.Fk_RoleID== "686fc53af41f7edee9b89cd6" && x.Type== "Reviewer")
                             .Project(x => new UserDropdownDto
                             {
                                 Id = x.Id,
                                 Name = x.FullName
                             }).ToListAsync();
+
+                        response.Data = userList;
+                    }
+                    else if (request.type.Trim().ToLower() == "trainee")
+                    {
+                        var userList = await _user
+                             .Find(x => x.IsDelete == 0 && x.Type == "Trainee" && x.Fk_RoleID == "686fc53af41f7edee9b89cd6")
+                             .Project(x => new UserDropdownDto
+                             {
+                                 Id = x.Id,
+                                 Name = x.FullName
+                             }).ToListAsync();
 
                         response.Data = userList;
                     }
@@ -1393,6 +1408,42 @@ namespace ZenithApp.ZenithRepository
                             {
                                 Id = x.Id,
                                 Name = x.Certificate_Name
+                            }).ToListAsync();
+
+                        response.Data = products;
+                    }
+                    else if (request.type.Trim().ToLower() == "techarea")
+                    {
+                        var products = await _technicalarea
+                            .Find(x => x.isDelete == false)
+                            .Project(x => new UserDropdownDto
+                            {
+                                Id = x.Id,
+                                Name = x.Name
+                            }).ToListAsync();
+
+                        response.Data = products;
+                    }
+                    else if (request.type.Trim().ToLower() == "audittype")
+                    {
+                        var products = await _masterAudit
+                            .Find(x => x.isDelete == false)
+                            .Project(x => new UserDropdownDto
+                            {
+                                Id = x.Id,
+                                Name = x.AuditName
+                            }).ToListAsync();
+
+                        response.Data = products;
+                    }
+                    else if (request.type.Trim().ToLower() == "designation")
+                    {
+                        var products = await _masterdesignation
+                            .Find(x => x.IsActive == false)
+                            .Project(x => new UserDropdownDto
+                            {
+                                Id = x.Id,
+                                Name = x.DesignationName
                             }).ToListAsync();
 
                         response.Data = products;
