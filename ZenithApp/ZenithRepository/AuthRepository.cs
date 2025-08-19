@@ -134,7 +134,7 @@ namespace gmkRepositories
                     Role = userRole,
                     email = user.EmailId,
                     mobileNo = user.ContactNo,
-                    Department = user.ContactNo,
+                    Department = user.Department,
                 };
 
                 return response;
@@ -306,7 +306,7 @@ namespace gmkRepositories
                     Role = "customer",
                     email = user.EmailId,
                     mobileNo = user.ContactNo,
-                    Department = user.ContactNo,
+                    Department = user.Department,
                 }
             };
         }
