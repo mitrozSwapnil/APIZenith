@@ -8,6 +8,7 @@
         public DateTime? Application_Received_date { get; set; }
         public DateTime? ApplicationReviewDate { get; set; }
         public string? Orgnization_Name { get; set; }
+        public string? ActiveReviwer { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
         public string? Fk_Certificate { get; set; }
         public string? AssignTo { get; set; }
