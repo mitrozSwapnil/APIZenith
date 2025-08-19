@@ -7,7 +7,7 @@ namespace ZenithApp.ZenithMessage
     {
        
         public string ActivityName { get; set; }
-        public string PersonnelByClient { get; set; }
+        public string? PersonnelByClient { get; set; }
         public string EffectivePersonnel { get; set; }
         public string Comment { get; set; }
         public string AdditionalComments { get; set; }

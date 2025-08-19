@@ -4,6 +4,7 @@
     {
         public string? Id { get; set; }
         public string? ApplicationId { get; set; }
+        public string? ApplicationName { get; set; }
         public string? CompanyName { get; set; }
         public bool? IsFinal { get; set; }
         public string? Certification_Name { get; set; }
