@@ -4,10 +4,9 @@ namespace ZenithApp.ZenithMessage
 {
     public class getReviewerApplicationResponse: BaseResponse
     {
-        //public List<ReviewerApplicationData> Data { get; set; }
         public object Data { get; set; }
+        public List<tbl_ApplicationFieldComment> Comments { get; set; } = new();
         public string CertificateName { get; set; }
-
         public string AssigntToName { get; set; }
         public string statusName { get; set; }
 
