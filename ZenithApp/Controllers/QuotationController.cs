@@ -43,6 +43,18 @@ namespace ZenithApp.Controllers
             return Ok(new { message = "Successfully added" });
         }
 
+
+        [HttpPost("GetQuotationDashboard")]
+        public IActionResult GetQuotationDashboard(getDashboardRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<getQuotationDashboardResponse>(model);
+        }
+
+
         [HttpPost("CreateQuotation")]
         public IActionResult CreateQuotation(createQuotationRequest model)
         {
@@ -88,6 +100,10 @@ namespace ZenithApp.Controllers
             else if (action == nameof(GetQuotationPreview))
             {
                 return _quotationRepository.GetQuotationPreview(request as getmandaysbyapplicationIdRequest).Result;
+            }
+            else if (action == nameof(GetQuotationDashboard))
+            {
+                return _quotationRepository.GetQuotationDashboard(request as getDashboardRequest).Result;
             }
 
             throw new NotImplementedException();
