@@ -12,6 +12,7 @@ namespace ZenithApp.CommonServices
         private readonly IMongoCollection<tbl_master_certificates> _masterCertificate;
         private readonly IMongoCollection<tbl_user> _userlist;
         private readonly IMongoCollection<tbl_Status> _status;
+        private readonly IMongoCollection<tbl_User_Role> _userrole;
 
         public MongoDbService(IMongoClient mongoClient, IOptions<MongoDbSettings> settings)
         {
@@ -19,6 +20,7 @@ namespace ZenithApp.CommonServices
             _masterCertificate = _database.GetCollection<tbl_master_certificates>("tbl_master_certificates");
             _userlist = _database.GetCollection<tbl_user>("tbl_user");
             _status = _database.GetCollection<tbl_Status>("tbl_Status");
+            _userrole = _database.GetCollection<tbl_User_Role>("tbl_User_Role");
         }
 
         // Generic method to get the application collection dynamically
@@ -36,7 +38,13 @@ namespace ZenithApp.CommonServices
         }
         public string ReviewerName(string reviewerId)
         {
-            var name = _userlist.Find(x => x.Id == reviewerId)?.FirstOrDefaultAsync().Result.UserName;
+            var name = _userlist.Find(x => x.Id == reviewerId)?.FirstOrDefaultAsync().Result.FullName;
+            return name;
+        }
+        public string UserRoleType(string reviewerId)
+        {
+            var name = _userlist.Find(x => x.Id == reviewerId)?.FirstOrDefaultAsync().Result.Type;
+           // var name = _userrole.Find(x => x.Id == roleid)?.FirstOrDefaultAsync().Result.roleName;
             return name;
         }
         public string StatusName(string statusid)

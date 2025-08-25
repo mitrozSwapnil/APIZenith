@@ -8,6 +8,8 @@
     {
         public string? ApplicationId { get; set; }
         public string? AssignPersonName { get; set; }
+        public string? AssignPersonRole { get; set; }
+        public string? AssignPersonId { get; set; }
         public DateTime? LatestUpdatedDate { get; set; }
     }
 }
