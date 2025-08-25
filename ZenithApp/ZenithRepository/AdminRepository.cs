@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using System.Net;
+using System.Reflection;
 using System.Runtime.ConstrainedExecution;
 using System.Threading;
 using ZenithApp.CommonServices;
@@ -166,11 +167,12 @@ namespace ZenithApp.ZenithRepository
                                     ApplicationId = cert.Id,
                                     ApplicationName  =app.ApplicationId,
                                     ReceiveDate = app.SubmitDate,
+                                    IsFinal=app.IsFinalSubmit,
                                     CompanyName = app.Orgnization_Name,
                                     Certification_Name = masterCert.Certificate_Name,
                                     Certification_Id = masterCert.Id,
-                                    Status = (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
-                                    AssignedUserName = assignedUser?.Id,
+                                    Status = (bool)app.IsFinalSubmit ? "Waiting for approval": (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
+                                    AssignedUserName = assignedUser?.FullName,
                                 };
 
                                 dashboardList.Add(dashboardRecord);
@@ -292,7 +294,7 @@ namespace ZenithApp.ZenithRepository
                                 }).ToList();
 
                                 var keyPersonnelsData = await _customerKeyPersonnel
-                                    .Find(x => x.Fk_Customer_Application == request.ApplicationId && x.Is_Delete == false)
+                                    .Find(x => x.Fk_Customer_Application == customerapp.Id && x.Is_Delete == false)
                                     .ToListAsync();
                                 var keyPersonnelsList = keyPersonnelsData.Select(kp => new KeyPersonnelList
                                 {
@@ -1071,27 +1073,50 @@ namespace ZenithApp.ZenithRepository
                     }
                     if (request.CertificationName == "ISO")
                     {
-                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
-
-                        // Get the last matching record based on descending ObjectId (which reflects insert time)
-                        var data = await _iso.Find(filter)
-                                             .SortByDescending(x => x.Id)
-                                             .FirstOrDefaultAsync();
-
-                        if (data != null)
+                        
+                        
+                        // With the following initialization:
+                        tbl_ISO_Application? data = null;
+                  
+                        var filterwithAdmin = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId)& Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_UserId, UserId);
+                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        if(filterwithAdmin != null)
                         {
-                            var certificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
-                            var assigneeName = _mongoDbService.ReviewerName(data.AssignTo);
-                            var statusName = _mongoDbService.StatusName(data.Status);
+                            data = await _iso.Find(filterwithAdmin).FirstOrDefaultAsync();
+                        }
+                        else
+                        {
+                            data = await _iso.Find(filter).FirstOrDefaultAsync();
 
-                            response.Data = data;
-                            response.CertificateName = certificateName;
-                            response.statusName = statusName;
+                        }
+
+
+                        var anotherreviewerfilter = Builders<tbl_ISO_Application>.Filter.And(
+                            Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate)
+                           
+                        );
+
+                        var anotherReviewerData = await _iso.Find(anotherreviewerfilter).FirstOrDefaultAsync();
+                        if (anotherReviewerData != null)
+                        {
+                            MergeDataInPlace(data, anotherReviewerData); // merges directly into data
                         }
                         else
                         {
                             response.Message = "No ISO application found for given ApplicationId.";
                         }
+
+
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
+
+                        response.Data = data;
+                        response.Comments = comments;
+                        response.CertificateName = cerificateName;
+                        response.statusName = status;
                     }
                     else if (request.CertificationName == "FSSC")
                     {
@@ -1100,7 +1125,7 @@ namespace ZenithApp.ZenithRepository
                         var data = await _fssc.Find(filter)
                                               .SortByDescending(x => x.Id)
                                               .FirstOrDefaultAsync();
-
+                        
                         if (data != null)
                         {
                             var certificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
@@ -1866,7 +1891,9 @@ namespace ZenithApp.ZenithRepository
                                 return new ReviewerHistoryDto
                                 {
                                     ApplicationId = latestApp.ApplicationId,
+                                    AssignPersonId=g.Key,
                                     AssignPersonName = _mongoDbService.ReviewerName(g.Key),
+                                    AssignPersonRole = _mongoDbService.UserRoleType(g.Key),
                                     LatestUpdatedDate = latestApp.UpdatedAt ?? latestApp.CreatedAt
                                 };
                             })
@@ -1874,6 +1901,9 @@ namespace ZenithApp.ZenithRepository
 
                         // ✅ Add reviewer history array to response
                         response.ReviewerHistory = result;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 200;
                     }
 
                     else if (request.CertificationName == "FSSC")
@@ -1903,6 +1933,76 @@ namespace ZenithApp.ZenithRepository
             }
             return response;
         }
+
+        private async Task<List<tbl_ApplicationFieldComment>> GetFieldCommentsAsync(string applicationId, string fkCertificate, string UserId, IMongoCollection<tbl_ApplicationFieldComment> commentCollection)
+        {
+            var filter = Builders<tbl_ApplicationFieldComment>.Filter.And(
+                Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.ApplicationId, applicationId),
+                Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, fkCertificate),
+                Builders<tbl_ApplicationFieldComment>.Filter.Ne(c => c.Fk_User, UserId)
+            );
+
+            //return await commentCollection
+            //    .Find(filter)
+            //    .SortByDescending(c => c.CreatedOn)
+            //    .ToListAsync();
+
+            var pipeline = commentCollection.Aggregate()
+        .Match(filter)
+        .SortByDescending(c => c.CreatedOn) // or use c.Id
+        .Group(
+            key => key.FieldName,
+            g => g.First()
+        );
+
+            return await pipeline.ToListAsync();
+        }
+
+        private void MergeDataInPlace<T>(T target, T source)
+        {
+            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" };
+
+            // Step 1: Check if source has at least one non-empty field
+            bool hasAnyValue = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => !excludedFields.Contains(p.Name))
+                .Any(p => HasValue(p.GetValue(source)));
+
+            if (!hasAnyValue)
+            {
+                // Nothing to merge, return
+                return;
+            }
+
+            // Step 2: Merge values (field-by-field) from source to target
+            foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (excludedFields.Contains(prop.Name))
+                    continue;
+
+                var sourceValue = prop.GetValue(source);
+                if (HasValue(sourceValue))
+                {
+                    prop.SetValue(target, sourceValue);
+                }
+            }
+        }
+
+        private bool HasValue(object value)
+        {
+            if (value == null) return false;
+            if (value is string str) return !string.IsNullOrWhiteSpace(str);
+
+            var type = value.GetType();
+            if (type.IsValueType)
+                return !value.Equals(Activator.CreateInstance(type));
+
+            if (value is System.Collections.IEnumerable enumerable && !(value is string))
+                return enumerable.GetEnumerator().MoveNext();
+
+            return true;
+        }
+
+
         protected override void Disposing()
         {
             //throw new NotImplementedException();

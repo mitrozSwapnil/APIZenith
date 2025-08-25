@@ -9,6 +9,7 @@ namespace ZenithApp.ZenithMessage
         public string CertificateName { get; set; }
         public string AssigntToName { get; set; }
         public string statusName { get; set; }
+        public string AssignRole { get; set; }
 
     }
 }

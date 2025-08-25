@@ -32,6 +32,17 @@ namespace ZenithApp.Controllers
         //    return Ok(new { message = "Successfully added" });
         //}
 
+        [HttpPost("AddTerms")]
+        public IActionResult AddTerms([FromBody] tbl_master_terms term)
+        {
+            if (term == null)
+                return BadRequest("Invalid data.");
+
+            _quotationRepository.AddTerms(term);
+
+            return Ok(new { message = "Successfully added" });
+        }
+
         [HttpPost("CreateQuotation")]
         public IActionResult CreateQuotation(createQuotationRequest model)
         {
@@ -53,6 +64,17 @@ namespace ZenithApp.Controllers
             return this.ProcessRequest<getmandaysbyapplicationIdResponse>(model);
         }
 
+        [HttpPost("GetQuotationPreview")]
+        public IActionResult GetQuotationPreview(getmandaysbyapplicationIdRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<getmandaysbyapplicationIdResponse>(model);
+        }
+
+
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
             if (action == nameof(CreateQuotation))
@@ -62,6 +84,10 @@ namespace ZenithApp.Controllers
             else if (action == nameof(GetQuotation))
             {
                 return _quotationRepository.GetQuotation(request as getmandaysbyapplicationIdRequest).Result;
+            }
+            else if (action == nameof(GetQuotationPreview))
+            {
+                return _quotationRepository.GetQuotationPreview(request as getmandaysbyapplicationIdRequest).Result;
             }
 
             throw new NotImplementedException();
