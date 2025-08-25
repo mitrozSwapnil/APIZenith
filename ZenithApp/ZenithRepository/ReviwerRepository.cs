@@ -525,6 +525,7 @@ namespace ZenithApp.ZenithRepository
             return response;
         }
 
+
         private List<CustomerDashboardData> GetDepartmentApplications<T>(IMongoCollection<T> collection, string userId)where T : class
         {
             var results = new List<CustomerDashboardData>();
@@ -830,11 +831,12 @@ namespace ZenithApp.ZenithRepository
                         var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.applicationId);
 
                         var data = await _iso.Find(filter).FirstOrDefaultAsync();
+                        
 
                         var anotherreviewerfilter = Builders<tbl_ISO_Application>.Filter.And(
                             Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
                             Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
-                            Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                           Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
                             Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
                         );
 
@@ -848,7 +850,7 @@ namespace ZenithApp.ZenithRepository
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
                         var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
                         var status = _mongoDbService.StatusName(data.Status);
-                        var comments = await GetFieldCommentsAsync(data.ApplicationId,data.Fk_Certificate, _comments);
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
 
                         response.Data = data;
                         response.Comments = comments;
@@ -946,9 +948,144 @@ namespace ZenithApp.ZenithRepository
             return response;
         }
 
+
+
+        public async Task<getReviewerApplicationResponse> GetApplicationHistory(getApplicationHistoryRequest request)
+        {
+            getReviewerApplicationResponse response = new getReviewerApplicationResponse();
+            try
+            {
+                var UserId = _acc.HttpContext?.Session.GetString("UserId");
+                var userFkRole = _user.Find(x => x.Id == UserId).FirstOrDefault()?.Fk_RoleID;
+                var userType = _role.Find(x => x.Id == userFkRole).FirstOrDefault()?.roleName;
+
+                if (userType?.Trim().ToLower() !="customer")
+                {
+                    if (string.IsNullOrWhiteSpace(request.applicationId))
+                    {
+                        response.Message = "ApplicationId is required.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                        response.Success = false;
+                        response.ResponseCode = 1;
+                        return response;
+                    }
+
+                    if (request.CertificationName == "ISO")
+                    {
+                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId)
+                             & Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_UserId, request.userId);
+
+                        var data = await _iso.Find(filter).FirstOrDefaultAsync();
+
+
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
+                        var assignrole = _mongoDbService.UserRoleType(data.AssignTo);
+
+                        response.Data = data;
+                        response.Comments = comments;
+                        response.AssigntToName = assignmane;
+                        response.AssignRole = assignrole;
+                        response.CertificateName = cerificateName;
+                        response.statusName = status;
+
+                    }
+                    else if (request.CertificationName == "FSSC")
+                    {
+                        var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Id, request.applicationId);
+
+                        var data = await _fssc.Find(filter).FirstOrDefaultAsync();
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var assignrole= _mongoDbService.UserRoleType(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+
+
+                        response.Data = data;
+                        response.CertificateName = cerificateName;
+                        response.statusName = status;
+                    }
+                    else if (request.CertificationName == "ICMED")
+                    {
+                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.applicationId);
+
+                        var data = await _icmed.Find(filter).FirstOrDefaultAsync();
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+
+
+                        response.Data = data;
+                        response.CertificateName = cerificateName;
+                        response.statusName = status;
+                    }
+                    else if (request.CertificationName == "ICMED_PLUS")
+                    {
+                        var filter = Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Id, request.applicationId);
+
+                        var data = await _icmedplus.Find(filter).FirstOrDefaultAsync();
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+
+
+                        response.Data = data;
+                        response.CertificateName = cerificateName;
+                        response.statusName = status;
+                    }
+                    else if (request.CertificationName == "IMDR")
+                    {
+                        var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.applicationId);
+
+                        var data = await _imdr.Find(filter).FirstOrDefaultAsync();
+                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+
+
+                        response.Data = data;
+                        response.CertificateName = cerificateName;
+                        response.statusName = status;
+                    }
+                    else
+                    {
+                        response.Message = "Invalid Certification Name.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                        response.Success = false;
+                        response.ResponseCode = 1;
+                        return response;
+                    }
+                    response.Message = "Data fetched successfully.";
+                    response.HttpStatusCode = HttpStatusCode.OK;
+                    response.Success = true;
+                    response.ResponseCode = 0;
+
+
+                }
+                else
+                {
+                    response.Message = "Invalid token.";
+                    response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                    response.Success = false;
+                    response.ResponseCode = 1;
+                }
+            }
+            catch (Exception ex)
+            {
+                response.Message = "GetCustomerApplication Exception: " + ex.Message;
+                response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+                response.Success = false;
+                response.ResponseCode = 1;
+            }
+
+            return response;
+        }
+
         private void MergeDataInPlace<T>(T target, T source)
         {
-            var excludedFields = new[] { "AssignTo", "Id", "UserFk" };
+            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" };
 
             // Step 1: Check if source has at least one non-empty field
             bool hasAnyValue = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
@@ -992,14 +1129,28 @@ namespace ZenithApp.ZenithRepository
 
 
 
-        private async Task<List<tbl_ApplicationFieldComment>> GetFieldCommentsAsync(string applicationId,string fkCertificate,IMongoCollection<tbl_ApplicationFieldComment> commentCollection)
+        private async Task<List<tbl_ApplicationFieldComment>> GetFieldCommentsAsync(string applicationId,string fkCertificate,string UserId, IMongoCollection<tbl_ApplicationFieldComment> commentCollection)
         {
             var filter = Builders<tbl_ApplicationFieldComment>.Filter.And(
                 Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.ApplicationId, applicationId),
-                Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, fkCertificate)
+                Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, fkCertificate),
+                Builders<tbl_ApplicationFieldComment>.Filter.Ne(c => c.Fk_User, UserId)
             );
 
-            return await commentCollection.Find(filter).ToListAsync();
+            //return await commentCollection
+            //    .Find(filter)
+            //    .SortByDescending(c => c.CreatedOn)
+            //    .ToListAsync();
+
+            var pipeline = commentCollection.Aggregate()
+        .Match(filter)
+        .SortByDescending(c => c.CreatedOn) // or use c.Id
+        .Group(
+            key => key.FieldName,
+            g => g.First() 
+        );
+
+            return await pipeline.ToListAsync();
         }
 
 
@@ -1671,7 +1822,7 @@ namespace ZenithApp.ZenithRepository
 
             // Fetch application
             var application = await _iso
-                .Find(x => x.Id == request.ApplicationId)
+                .Find(x => x.ApplicationId == request.ApplicationId)
                 .FirstOrDefaultAsync();
 
             if (application == null)

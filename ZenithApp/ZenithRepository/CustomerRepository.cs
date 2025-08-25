@@ -24,6 +24,7 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_master_technicalArea> _technicalarea;
         private readonly IMongoCollection<tbl_master_Audit> _masterAudit;
         private readonly IMongoCollection<tbl_master_designation> _masterdesignation;
+        private readonly IMongoCollection<tbl_master_terms> _masterterms;
 
 
 
@@ -48,6 +49,7 @@ namespace ZenithApp.ZenithRepository
             _technicalarea = database.GetCollection<tbl_master_technicalArea>("tbl_master_technicalArea");
             _masterAudit = database.GetCollection<tbl_master_Audit>("tbl_master_audit");
             _masterdesignation = database.GetCollection<tbl_master_designation>("tbl_master_designation");
+            _masterterms = database.GetCollection<tbl_master_terms>("tbl_master_terms");
 
 
 
@@ -68,11 +70,6 @@ namespace ZenithApp.ZenithRepository
 
         public void CreateCustomerCertification(tbl_customer_certificates customer_Certificates) =>
             _customercertificates.InsertOne(customer_Certificates);
-
-
-
-
-
 
         public async Task<getCretificationsbyAppIdResponse> getCretificationsbyAppId(getCretificationsbyAppIdRequest request)
         {
@@ -769,6 +766,7 @@ namespace ZenithApp.ZenithRepository
                                         {
                                             var update = Builders<tbl_customer_site>.Update
                                                 .Set(x => x.Telephone, string.IsNullOrWhiteSpace(site.Telephone) ? existingSite.Telephone : site.Telephone)
+                                                .Set(x => x.Address, string.IsNullOrWhiteSpace(site.Address) ? existingSite.Address : site.Address)
                                                 .Set(x => x.Web, string.IsNullOrWhiteSpace(site.Web) ? existingSite.Web : site.Web)
                                                 .Set(x => x.Activity_Department, string.IsNullOrWhiteSpace(site.Activity_Department) ? existingSite.Activity_Department : site.Activity_Department)
                                                 .Set(x => x.Manpower, string.IsNullOrWhiteSpace(site.Manpower) ? existingSite.Manpower : site.Manpower)
@@ -877,6 +875,7 @@ namespace ZenithApp.ZenithRepository
                                         {
                                             var update = Builders<tbl_customer_Entity>.Update
                                                 .Set(x => x.Identification_Number, string.IsNullOrWhiteSpace(entity.Identification_Number) ? existingEntity.Identification_Number : entity.Identification_Number)
+                                                .Set(x => x.Entity_Name, string.IsNullOrWhiteSpace(entity.Name_of_Entity) ? existingEntity.Entity_Name : entity.Name_of_Entity)
                                                 .Set(x => x.file, string.IsNullOrWhiteSpace(entity.file) ? existingEntity.file : entity.file)
                                                 .Set(x => x.UpdatedAt, DateTime.Now)
                                                 .Set(x => x.UpdatedBy, UserId);
@@ -1127,7 +1126,7 @@ namespace ZenithApp.ZenithRepository
                 var userFkRole = _user.Find(x => x.Id == UserId).FirstOrDefault()?.Fk_RoleID;
                 var userType = _role.Find(x => x.Id == userFkRole).FirstOrDefault()?.roleName;
 
-                if (userType?.Trim().ToLower() == "customer")
+                if (userType!=null)
                 {
                     if (string.IsNullOrWhiteSpace(request.applicationId))
                     {
@@ -1137,13 +1136,22 @@ namespace ZenithApp.ZenithRepository
                         response.ResponseCode = 1;
                         return response;
                     }
+                    var appId = _customercertificates
+                        .Find(x => x.Id == request.applicationId && x.Is_Delete == false)
+                        .FirstOrDefault();
+
+                    var fkCustomerAppId = appId?.Fk_Customer_Application; // null-safe access
 
                     var app = _customer
-                        .Find(x => x.Id == request.applicationId && x.IsDelete == false)
+                        .Find(x =>
+                            x.Id == request.applicationId ||
+                            (fkCustomerAppId != null && x.Id == fkCustomerAppId)
+                            && x.IsDelete == false)
                         .FirstOrDefault();
 
                     if (app == null)
                     {
+
                         response.Message = "No data found for the given ApplicationId.";
                         response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
                         response.Success = false;
@@ -1444,6 +1452,18 @@ namespace ZenithApp.ZenithRepository
                             {
                                 Id = x.Id,
                                 Name = x.DesignationName
+                            }).ToListAsync();
+
+                        response.Data = products;
+                    }
+                    else if (request.type.Trim().ToLower() == "terms")
+                    {
+                        var products = await _masterterms
+                            .Find(x => x.isDelete == false)
+                            .Project(x => new UserDropdownDto
+                            {
+                                Id = x.Id,
+                                Name = x.term
                             }).ToListAsync();
 
                         response.Data = products;

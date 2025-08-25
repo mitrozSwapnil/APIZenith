@@ -38,6 +38,16 @@ namespace ZenithApp.Controllers
             _acc.HttpContext?.Session.SetString("UserId", UserId);
             return this.ProcessRequest<getReviewerApplicationResponse>(model);
         }
+        
+        [HttpPost("GetApplicationHistory")]
+        public IActionResult GetApplicationHistory(getApplicationHistoryRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<getReviewerApplicationResponse>(model);
+        }
 
 
         [HttpPost("SaveISOApplication")]
@@ -108,6 +118,10 @@ namespace ZenithApp.Controllers
             else if (action == nameof(GetReviewerApplication))
             {
                 return _reviwerRepository.GetReviewerApplication(request as getReviewerApplicationRequest).Result;
+            }
+            else if (action == nameof(GetApplicationHistory))
+            {
+                return _reviwerRepository.GetApplicationHistory(request as getApplicationHistoryRequest).Result;
             }
             else if (action == nameof(SaveISOApplication))
             {
