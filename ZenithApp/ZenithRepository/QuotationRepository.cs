@@ -79,6 +79,104 @@ namespace ZenithApp.ZenithRepository
         }
 
 
+
+        public async Task<getQuotationDashboardResponse> GetQuotationDashboard(getDashboardRequest request)
+        {
+            getQuotationDashboardResponse response = new getQuotationDashboardResponse();
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+
+            var userRecord = _user.Find(x => x.Id == UserId).FirstOrDefault();
+            var departmentList = userRecord?.Department; // List<string>
+            var userFkRole = userRecord?.Fk_RoleID;
+            var usertype = _role.Find(x => x.Id == userFkRole).FirstOrDefault()?.roleName;
+
+            if (usertype?.Trim().ToLower() == "Admin")
+            {
+                response.Message = "Invalid Token.";
+                response.Success = false;
+                response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                response.ResponseCode = 1;
+                return response;
+            }
+
+            try
+            {
+                List<QuotationDashboardData> dashboardList = new List<QuotationDashboardData>();
+
+                // Pagination
+                var applications = _quoatation.Find(Builders<tbl_quoatation>.Filter.Empty).ToList();
+
+
+
+
+
+                foreach (var app in applications)
+                {
+                    string companyname=_isoApplication.Find(x => x.ApplicationId == app.ApplicationId).FirstOrDefault()?.Orgnization_Name ?? "";
+                    string ApplicationName=_isoApplication.Find(x => x.ApplicationId == app.ApplicationId).FirstOrDefault()?.Orgnization_Name ?? "";
+
+                    dashboardList.Add(new QuotationDashboardData
+                    {
+                        Id = app.Id,
+                       QuotationId=app.QuotationId,
+                        ApplicationName = ApplicationName,
+                        CompanyName = companyname,
+                        ApplicationId = app.ApplicationId,
+                        
+                        ReceiveDate = app.CreatedOn,
+                        
+                       
+                    });
+
+                }
+
+
+                if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                {
+                    var searchTerm = request.SearchTerm.Trim().ToLower();
+                    dashboardList = dashboardList
+                        .Where(x =>
+                            (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+                            (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+                        )
+                        .ToList();
+                }
+
+                var totalCount = dashboardList.Count;
+                var skip = (request.PageNumber - 1) * request.PageSize;
+                var pagination = new PageinationDto
+                {
+                    PageNumber = request.PageNumber,
+                    PageSize = request.PageSize,
+                    TotalRecords=totalCount
+                };
+                var paginatedList = dashboardList
+                    .Skip(skip)
+                    .Take(request.PageSize)
+                    .ToList();
+
+                response.Data = paginatedList;
+                response.Pagination = pagination;
+                response.Message = "Dashboard fetched successfully.";
+                response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                response.Success = true;
+            }
+            catch (Exception ex)
+            {
+                response.Message = "GetCustomerDashboard Exception: " + ex.Message;
+                response.Success = false;
+                response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+                response.ResponseCode = 1;
+            }
+
+            return response;
+        }
+
+
+
+
+
+
         public async Task<createQuotationResponse> CreateQuotation(createQuotationRequest request)
         {
             var response = new createQuotationResponse();
@@ -384,13 +482,17 @@ namespace ZenithApp.ZenithRepository
 
                     string organizationName = result.Contains("Orgnization_Name") ? result["Orgnization_Name"].AsString : string.Empty;
                     string location = result.Contains("Location") ? result["Location"].AsString : string.Empty;
-
                     var filterdata = Builders<tbl_quoatation>.Filter.Eq(x => x.ApplicationId, request.ApplicationId)
                         & Builders<tbl_quoatation>.Filter.Eq(x => x.CertificateType, request.CertificateTypeId);
 
                     var qdata = await _quoatation.Find(filterdata)
-                            .Project(x => x.QuotationData)  
-                            .FirstOrDefaultAsync();
+    .Project<BsonDocument>(Builders<tbl_quoatation>.Projection
+     .Exclude("_id")
+        .Include("QuotationId")       // if stored as lowercase
+        .Include("currency")          // check exact casing
+        .Include("CreatedOn")         // or "CreatedOn"
+        .Include("QuotationData"))
+    .FirstOrDefaultAsync();
                     var responseObj = new
                     {
                       //  ApplicationId = result.Contains("ApplicationId") ? result["ApplicationId"].AsString : string.Empty,
@@ -398,7 +500,7 @@ namespace ZenithApp.ZenithRepository
                         Orgnization_Name = result.Contains("Orgnization_Name") ? result["Orgnization_Name"].AsString : string.Empty,
                         Location = result.Contains("Location") ? result["Location"].AsString : string.Empty,
                         ApplicationData= BsonTypeMapper.MapToDotNetValue(result),
-                        QuotationData = BsonTypeMapper.MapToDotNetValue(qdata) 
+                        Quotation = BsonTypeMapper.MapToDotNetValue(qdata) 
                     };
 
                     
