@@ -1076,36 +1076,57 @@ namespace ZenithApp.ZenithRepository
                         
                         
                         // With the following initialization:
-                        tbl_ISO_Application? data = null;
+                        tbl_ISO_Application? adminData = null;
+                        tbl_ISO_Application? reviwerData = null;
+                        tbl_ISO_Application? traineData = null;
                   
-                        var filterwithAdmin = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId)& Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_UserId, UserId);
+                       
+
+                        
+
                         var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.applicationId);
-                        if(filterwithAdmin != null)
+                        var data = await _iso.Find(filter).FirstOrDefaultAsync();
+
+                        var filterwithAdmin = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId) &
+                                              Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, UserId);
+                        if (filterwithAdmin != null)
                         {
-                            data = await _iso.Find(filterwithAdmin).FirstOrDefaultAsync();
+                            adminData = await _iso.Find(filterwithAdmin).FirstOrDefaultAsync();
                         }
                         else
                         {
-                            data = await _iso.Find(filter).FirstOrDefaultAsync();
+                            var findreviewer = Builders<tbl_ISO_Application>.Filter.And(
+                               Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                               Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                               Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
+                            );
+                            var reviewerAndTraineeList = await _iso.Find(findreviewer).ToListAsync();
+                            foreach (var item in reviewerAndTraineeList)
+                            {
+                                var type = _user.Find(x => x.Id == item.AssignTo).FirstOrDefault()?.Type;
+                                if (type == "Reviewer")
+                                {
+                                    var reviwerDatas = Builders<tbl_ISO_Application>.Filter.And(
+                                       Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                       Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                       Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    reviwerData = await _iso.Find(reviwerDatas).FirstOrDefaultAsync();
+                                }
+                                else if (type == "Trainee")
+                                {
+                                    var traineDatas = Builders<tbl_ISO_Application>.Filter.And(
+                                        Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                     );
+                                    traineData = await _iso.Find(traineDatas).FirstOrDefaultAsync();
+                                }
+                            }
 
                         }
-
-
-                        var anotherreviewerfilter = Builders<tbl_ISO_Application>.Filter.And(
-                            Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
-                            Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate)
-                           
-                        );
-
-                        var anotherReviewerData = await _iso.Find(anotherreviewerfilter).FirstOrDefaultAsync();
-                        if (anotherReviewerData != null)
-                        {
-                            MergeDataInPlace(data, anotherReviewerData); // merges directly into data
-                        }
-                        else
-                        {
-                            response.Message = "No ISO application found for given ApplicationId.";
-                        }
+                        MergeDataInPlace(adminData, reviwerData, traineData); // merges directly into data
+                       
 
 
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
@@ -1958,33 +1979,42 @@ namespace ZenithApp.ZenithRepository
             return await pipeline.ToListAsync();
         }
 
-        private void MergeDataInPlace<T>(T target, T source)
+        private T MergeDataInPlace<T>(T admin, T reviewer, T trainee) where T : class, new()
         {
-            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" };
+            // If admin record doesn’t exist, create new target (empty object)
+            var target = admin ?? new T();
 
-            // Step 1: Check if source has at least one non-empty field
-            bool hasAnyValue = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => !excludedFields.Contains(p.Name))
-                .Any(p => HasValue(p.GetValue(source)));
+            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" , "ActiveReviwer" };
 
-            if (!hasAnyValue)
-            {
-                // Nothing to merge, return
-                return;
-            }
-
-            // Step 2: Merge values (field-by-field) from source to target
             foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (excludedFields.Contains(prop.Name))
                     continue;
 
-                var sourceValue = prop.GetValue(source);
-                if (HasValue(sourceValue))
+                var adminValue = admin != null ? prop.GetValue(admin) : null;
+                var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
+                var traineeValue = trainee != null ? prop.GetValue(trainee) : null;
+                var currentValue = prop.GetValue(target);
+
+                if (HasValue(adminValue))
                 {
-                    prop.SetValue(target, sourceValue);
+                    // Admin wins
+                    prop.SetValue(target, adminValue);
                 }
+                else if (HasValue(reviewerValue))
+                {
+                    // Reviewer fallback
+                    prop.SetValue(target, reviewerValue);
+                }
+                else if (HasValue(traineeValue))
+                {
+                    // Trainee fallback
+                    prop.SetValue(target, traineeValue);
+                }
+                // else leave default/null
             }
+
+            return target;
         }
 
         private bool HasValue(object value)
