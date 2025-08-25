@@ -839,12 +839,31 @@ namespace ZenithApp.ZenithRepository
                            Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
                             Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
                         );
-
                         var anotherReviewerData = await _iso.Find(anotherreviewerfilter).FirstOrDefaultAsync();
+
+                        var adminfilter = Builders<tbl_ISO_Application>.Filter.And(
+                           Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                           Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                           Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                           Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, anotherReviewerData.AssignTo)
+                        );
+
+                        var adminData = await _iso.Find(adminfilter).FirstOrDefaultAsync();
+
                         if (anotherReviewerData != null)
                         {
-                            MergeDataInPlace(data, anotherReviewerData); // merges directly into data
+                            if (adminData != null)
+                            {
+                                // Priority: Admin > Reviewer > Trainee
+                                MergeDataInPlace(data, adminData, anotherReviewerData);
+                            }
+                            else
+                            {
+                                // Only Reviewer > Trainee
+                                MergeDataInPlace(data, null, anotherReviewerData);
+                            }
                         }
+
 
 
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
@@ -1083,35 +1102,66 @@ namespace ZenithApp.ZenithRepository
             return response;
         }
 
-        private void MergeDataInPlace<T>(T target, T source)
+        //private void MergeDataInPlace<T>(T target, T source)
+        //{
+        //    var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" };
+
+        //    // Step 1: Check if source has at least one non-empty field
+        //    bool hasAnyValue = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        //        .Where(p => !excludedFields.Contains(p.Name))
+        //        .Any(p => HasValue(p.GetValue(source)));
+
+        //    if (!hasAnyValue)
+        //    {
+        //        // Nothing to merge, return
+        //        return;
+        //    }
+
+        //    // Step 2: Merge values (field-by-field) from source to target
+        //    foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        //    {
+        //        if (excludedFields.Contains(prop.Name))
+        //            continue;
+
+        //        var sourceValue = prop.GetValue(source);
+        //        if (HasValue(sourceValue))
+        //        {
+        //            prop.SetValue(target, sourceValue);
+        //        }
+        //    }
+        //}
+
+       
+
+        private void MergeDataInPlace<T>(T target, T admin, T reviewer)
         {
-            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" };
+            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" , "ActiveReviwer" };
 
-            // Step 1: Check if source has at least one non-empty field
-            bool hasAnyValue = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => !excludedFields.Contains(p.Name))
-                .Any(p => HasValue(p.GetValue(source)));
-
-            if (!hasAnyValue)
-            {
-                // Nothing to merge, return
-                return;
-            }
-
-            // Step 2: Merge values (field-by-field) from source to target
             foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (excludedFields.Contains(prop.Name))
                     continue;
 
-                var sourceValue = prop.GetValue(source);
-                if (HasValue(sourceValue))
+                var currentValue = prop.GetValue(target);   // base = trainee
+                var adminValue = admin != null ? prop.GetValue(admin) : null;
+                var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
+
+                if (HasValue(adminValue))
                 {
-                    prop.SetValue(target, sourceValue);
+                    // Admin has highest priority
+                    prop.SetValue(target, adminValue);
+                }
+                else if (HasValue(reviewerValue))
+                {
+                    // Reviewer fallback
+                    prop.SetValue(target, reviewerValue);
+                }
+                else
+                {
+                    // Keep trainee value (already in target)
                 }
             }
         }
-
         private bool HasValue(object value)
         {
             if (value == null) return false;
