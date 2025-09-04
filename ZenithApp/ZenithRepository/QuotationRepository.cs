@@ -1,9 +1,11 @@
-﻿using System.Reflection;
+﻿using System.Net.WebSockets;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using ZenithApp.CommonServices;
 using ZenithApp.Settings;
@@ -112,21 +114,39 @@ namespace ZenithApp.ZenithRepository
 
                 foreach (var app in applications)
                 {
-                    string companyname=_isoApplication.Find(x => x.ApplicationId == app.ApplicationId).FirstOrDefault()?.Orgnization_Name ?? "";
-                    string ApplicationName=_isoApplication.Find(x => x.ApplicationId == app.ApplicationId).FirstOrDefault()?.Orgnization_Name ?? "";
 
-                    dashboardList.Add(new QuotationDashboardData
+                    var certificate = _masterCertificate
+                        .Find(x => x.Id == app.CertificateType)
+                        .FirstOrDefault();
+
+                    string ApplicatioName = "";
+                    string company = "";
+                    if (certificate.Certificate_Name == "ISO")
                     {
-                        Id = app.Id,
-                       QuotationId=app.QuotationId,
-                        ApplicationName = ApplicationName,
-                        CompanyName = companyname,
-                        ApplicationId = app.ApplicationId,
-                        
-                        ReceiveDate = app.CreatedOn,
-                        
-                       
-                    });
+                        var IsoData = _isoApplication.Find(x => x.ApplicationId == app.ApplicationId && x.Fk_Certificate==app.CertificateType).FirstOrDefault();
+                        ApplicatioName = IsoData.ApplicationName;
+                        company = IsoData.Orgnization_Name;
+                    
+                    }
+                    else
+                    {
+                        throw new Exception("No document found for given ApplicationId and CertificateTypeId");
+                    }
+
+
+                        dashboardList.Add(new QuotationDashboardData
+                        {
+                            Id = app.Id,
+                            QuotationId = app.QuotationId,
+                            ApplicationName = ApplicatioName,
+                            CompanyName = company,
+                            ApplicationId = app.ApplicationId,
+                            Certification_Name=certificate.Certificate_Name,
+                            Certification_Id=app.CertificateType,
+                            ReceiveDate = app.CreatedOn,
+
+
+                        });
 
                 }
 
@@ -136,8 +156,9 @@ namespace ZenithApp.ZenithRepository
                     var searchTerm = request.SearchTerm.Trim().ToLower();
                     dashboardList = dashboardList
                         .Where(x =>
-                            (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
-                            (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+                            (!string.IsNullOrEmpty(x.ApplicationName) && x.ApplicationName.ToLower().Contains(searchTerm)) ||
+                            (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))||
+                            (!string.IsNullOrEmpty(x.QuotationId) && x.QuotationId.ToLower().Contains(searchTerm))
                         )
                         .ToList();
                 }
@@ -186,19 +207,91 @@ namespace ZenithApp.ZenithRepository
 
             if (usertype?.Trim().ToLower() == "admin")
             {
+                if (request.ApplicationId == "")
+                {
+                    response.Success = false;
+                    response.Message = "ApplicationId cannot be null.";
+                    response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                    response.ResponseCode = 1;
+                    return response;  
+                }
+
                 try
                 {
+                    var certificate = _masterCertificate
+                                           .Find(x => x.Id == request.CertificateType)
+                                           .FirstOrDefault();
+
+
+
+                    var duplicateFilter = Builders<tbl_quoatation>.Filter.And(
+                Builders<tbl_quoatation>.Filter.Eq(x => x.ApplicationId, request.ApplicationId),
+                Builders<tbl_quoatation>.Filter.Eq(x => x.CertificateType, request.CertificateType)
+                        );
+
+                    var existingQuotation = await _quoatation.Find(duplicateFilter).FirstOrDefaultAsync();
+
+                    if (existingQuotation != null)
+                    {
+                        BsonArray bsonTerms = new BsonArray();
+                        if (request.Terms != null && request.Terms.Any())
+                        {
+                            foreach (var term in request.Terms)
+                            {
+                                bsonTerms.Add(BsonDocument.Parse(JsonSerializer.Serialize(term)));
+                            }
+                        }
+
+
+                        var update = Builders<tbl_quoatation>.Update
+                    .Set(x => x.QuotationData, BsonDocument.Parse(JsonSerializer.Serialize(request.QuotationData)))
+                    .Set(x => x.IsSubmit, request.isSubmit)
+                    .Set(x => x.Currency, "INR") // or request.Currency
+                    .Set(x => x.CreatedOn, DateTime.Now)
+                        .Set(x => x.Terms, bsonTerms);
+                        await _quoatation.UpdateOneAsync(duplicateFilter, update);
+                        if (certificate.Certificate_Name == "ISO" && request.isSubmit==true)
+                        {
+                            var filter = Builders<tbl_ISO_Application>.Filter.And(
+            Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId),
+            Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, request.CertificateType)
+        );
+
+                            var isoupdate = Builders<tbl_ISO_Application>.Update
+                                .Set(x => x.Status, "68b53c93f053e6e4926d211b");
+
+
+                            await _isoApplication.UpdateOneAsync(filter, isoupdate);
+                        }
+
+
+                        response.Message = "Quotation updated successfully.";
+                        response.Success = true;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.ResponseCode = 0;
+                        return response;
+                    }
+
+                   
+
                     var entity = new tbl_quoatation
                     {
                         ApplicationId = request.ApplicationId,
                         QuotationId = GenerateQuotationId(),
                         CertificateType = request.CertificateType,
                         CreatedOn = DateTime.Now,
+                        IsSubmit=request.isSubmit,
                         Currency = "INR", // or get from request if needed
-                        QuotationData = BsonDocument.Parse(JsonSerializer.Serialize(request.QuotationData))
+                        QuotationData = BsonDocument.Parse(JsonSerializer.Serialize(request.QuotationData)),
+                        Terms = request.Terms != null
+    ? BsonArray.Create(request.Terms)   // convert List<Dictionary<string, object>> to BsonArray
+    : new BsonArray()
                     };
 
                     await _quoatation.InsertOneAsync(entity);
+
+                    
+
 
                     response.Message = "Quotation saved successfully.";
                     response.Success = true;
@@ -325,6 +418,8 @@ namespace ZenithApp.ZenithRepository
 
 
                     string organizationName = result.Contains("Orgnization_Name") ? result["Orgnization_Name"].AsString : string.Empty;
+                   
+
                     string location = result.Contains("Location") ? result["Location"].AsString : string.Empty;
 
                     // Step 1: Fetch fees list from the fees collection
@@ -353,12 +448,32 @@ namespace ZenithApp.ZenithRepository
                     }
 
                     // Step 3: Build response object with dynamic quotationfees
+
+
+                //    var duplicateFilter = Builders<tbl_quoatation>.Filter.And(
+                //Builders<tbl_quoatation>.Filter.Eq(x => x.ApplicationId, request.ApplicationId),
+                //Builders<tbl_quoatation>.Filter.Eq(x => x.CertificateType, request.CertificateTypeId)
+                //        );
+
+                //    var existingQuotation = await _quoatation.Find(duplicateFilter).FirstOrDefaultAsync();
+
+                //    if (existingQuotation != null)
+                //    {
+                //        response.Message = "Quotation already exists for this Application and Certificate.";
+                //        response.Success = false;
+                //        response.HttpStatusCode = System.Net.HttpStatusCode.Conflict; // 409 Conflict
+                //        response.ResponseCode = 2;
+                //        return response;
+                //    }
+
+
                     var responseObject = new
                     {
                         _id = result.GetValue("_id").AsObjectId.ToString(),
                         ApplicationId = request.ApplicationId,
-                        OrganizatioName= organizationName,
-                        Location="",
+                        OrganizatioName = organizationName,
+                        certificateName = certificate.Certificate_Name,
+                        Location ="",
                         CertificateId = result.GetValue("Fk_Certificate").AsObjectId.ToString(),
                         MandaysLists = result["MandaysLists"]
                             .AsBsonArray
@@ -486,13 +601,25 @@ namespace ZenithApp.ZenithRepository
                         & Builders<tbl_quoatation>.Filter.Eq(x => x.CertificateType, request.CertificateTypeId);
 
                     var qdata = await _quoatation.Find(filterdata)
-    .Project<BsonDocument>(Builders<tbl_quoatation>.Projection
-     .Exclude("_id")
-        .Include("QuotationId")       // if stored as lowercase
-        .Include("currency")          // check exact casing
-        .Include("CreatedOn")         // or "CreatedOn"
-        .Include("QuotationData"))
-    .FirstOrDefaultAsync();
+                            .Project<BsonDocument>(Builders<tbl_quoatation>.Projection
+                             .Exclude("_id")
+                                .Include("QuotationId")       // if stored as lowercase
+                                .Include("currency")          // check exact casing
+                                .Include("IsSubmit")          // check exact casing
+                                .Include("CreatedOn")         // or "CreatedOn"
+                                .Include("QuotationData")
+                                .Include("Terms"))
+                                    
+                            .FirstOrDefaultAsync();
+
+                    if(qdata== null)
+                    {
+                        response.Message = "Preview not avilable";
+                        response.Success = true;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.ResponseCode = 0;
+                        return response;
+                    }
                     var responseObj = new
                     {
                       //  ApplicationId = result.Contains("ApplicationId") ? result["ApplicationId"].AsString : string.Empty,

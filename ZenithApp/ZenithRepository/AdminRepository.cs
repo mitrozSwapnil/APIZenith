@@ -154,12 +154,24 @@ namespace ZenithApp.ZenithRepository
                                 .Find(x => x.Id == cert.Fk_Certificates)
                                 .FirstOrDefaultAsync();
 
+
+
+
                             if (masterCert != null)
                             {
                                 var assignedUser = !string.IsNullOrWhiteSpace(cert.AssignTo)
                                     ? await _user.Find(x => x.Id == cert.AssignTo && x.IsDelete == 0)
                                         .FirstOrDefaultAsync()
                                     : null;
+
+
+                                var isoFilter = Builders<tbl_ISO_Application>.Filter.And(
+    Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, cert.Id),
+    Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, masterCert.Id)
+);
+
+                                var isoApplication = await _iso.Find(isoFilter).FirstOrDefaultAsync();
+
 
                                 var dashboardRecord = new CustomerDashboardData
                                 {
@@ -171,7 +183,9 @@ namespace ZenithApp.ZenithRepository
                                     CompanyName = app.Orgnization_Name,
                                     Certification_Name = masterCert.Certificate_Name,
                                     Certification_Id = masterCert.Id,
-                                    Status = (bool)app.IsFinalSubmit ? "Waiting for approval": (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
+                                    Status = isoApplication != null
+        ? (await _status.Find(x => x.Id == isoApplication.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending"
+        : (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
                                     AssignedUserName = assignedUser?.FullName,
                                 };
 
@@ -260,7 +274,7 @@ namespace ZenithApp.ZenithRepository
                         var customerapp = await _customer.Find(x => x.Id == application.Fk_Customer_Application).FirstOrDefaultAsync();
                         if (application != null)
                         {
-                            application.AssignTo = request.TrineeId;
+                            application.AssignTo = request.ReviewerId;
                             application.UpdatedAt = DateTime.Now; // Update the timestamp
                             application.UpdatedBy = userId; // Set the user who updated
                             var status = await _status.Find(x => x.StatusName == "InProgress" && x.IsDelete == false).FirstOrDefaultAsync();
@@ -1079,12 +1093,9 @@ namespace ZenithApp.ZenithRepository
                         tbl_ISO_Application? adminData = null;
                         tbl_ISO_Application? reviwerData = null;
                         tbl_ISO_Application? traineData = null;
-                  
-                       
-
                         
 
-                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.applicationId);
+                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
                         var data = await _iso.Find(filter).FirstOrDefaultAsync();
 
                         var filterwithAdmin = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId) &
@@ -1129,14 +1140,14 @@ namespace ZenithApp.ZenithRepository
                        
 
 
-                        var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        //var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
                         var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
                         var status = _mongoDbService.StatusName(data.Status);
                         var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
 
                         response.Data = data;
                         response.Comments = comments;
-                        response.CertificateName = cerificateName;
+                        //response.CertificateName = cerificateName;
                         response.statusName = status;
                     }
                     else if (request.CertificationName == "FSSC")
@@ -1898,8 +1909,7 @@ namespace ZenithApp.ZenithRepository
                     if (request.CertificationName == "ISO")
                     {
                         var filter = Builders<tbl_ISO_Application>.Filter.And(
-                            Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId),
-                            Builders<tbl_ISO_Application>.Filter.Eq(x => x.IsFinalSubmit, true)
+                            Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId)
                         );
 
                         var applications = await _iso.Find(filter).ToListAsync();
@@ -1969,15 +1979,15 @@ namespace ZenithApp.ZenithRepository
             //    .ToListAsync();
 
             var pipeline = commentCollection.Aggregate()
-        .Match(filter)
-        .SortByDescending(c => c.CreatedOn) // or use c.Id
-        .Group(
-            key => key.FieldName,
-            g => g.First()
-        );
+            .Match(filter)
+            .SortByDescending(c => c.CreatedOn) // or use c.Id
+            .Group(
+                key => key.FieldName,
+                g => g.First()
+            );
 
-            return await pipeline.ToListAsync();
-        }
+                return await pipeline.ToListAsync();
+            }
 
         private T MergeDataInPlace<T>(T admin, T reviewer, T trainee) where T : class, new()
         {
@@ -2030,6 +2040,66 @@ namespace ZenithApp.ZenithRepository
                 return enumerable.GetEnumerator().MoveNext();
 
             return true;
+        }
+
+
+        public async Task<BaseResponse> SaveApplicationStatus(statusRequest request)
+        {
+            var response = new addReviewerApplicationResponse();
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
+            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
+            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+
+            if (userType?.Trim().ToLower() == "admin")
+            {
+                try
+                {
+                    
+                    if (!string.IsNullOrEmpty(request.applicationId))
+                    {
+                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
+                        if (request.status == "Approved")
+                        {
+                            var update = Builders<tbl_ISO_Application>.Update
+                            .Set(x => x.Status, "68a80adcf43ed36702310521")
+                            .Set(x => x.UpdatedAt, DateTime.UtcNow); // or DateTime.Now if you prefer local time
+
+                            await _iso.UpdateManyAsync(filter, update);
+                        }
+                        else if(request.status=="Rejected")
+                        {
+                            var update = Builders<tbl_ISO_Application>.Update
+                            .Set(x => x.Status, "68ac658b45a82f9f829724db")
+                            .Set(x => x.UpdatedAt, DateTime.UtcNow); // or DateTime.Now if you prefer local time
+
+                            await _iso.UpdateManyAsync(filter, update);
+                        }
+                        
+
+                        //response.Data = new List<tbl_ISO_Application> { result };
+                        response.Message = "status Saved successfully.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 0;
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    response.Message = "SubmitFsscApplication Exception: " + ex.Message;
+                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                    response.Success = false;
+                }
+            }
+            else
+            {
+                response.Message = "Invalid token.";
+                response.HttpStatusCode = HttpStatusCode.Unauthorized;
+                response.Success = false;
+            }
+
+            return response;
         }
 
 
