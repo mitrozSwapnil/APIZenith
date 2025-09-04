@@ -112,22 +112,20 @@ namespace ZenithApp.ZenithRepository
 
                 foreach (var app in applications)
                 {
-                    string companyname=_isoApplication.Find(x => x.ApplicationId == app.ApplicationId).FirstOrDefault()?.Orgnization_Name ?? "";
-                    string ApplicationName=_isoApplication.Find(x => x.ApplicationId == app.ApplicationId).FirstOrDefault()?.Orgnization_Name ?? "";
+                    var applicationData = _isoApplication.Find(x => x.ApplicationId == app.ApplicationId).FirstOrDefault();
+                    var certificateData = _masterCertificate.Find(x => x.Id.ToString() == app.CertificateType).FirstOrDefault();
 
                     dashboardList.Add(new QuotationDashboardData
                     {
                         Id = app.Id,
-                       QuotationId=app.QuotationId,
-                        ApplicationName = ApplicationName,
-                        CompanyName = companyname,
+                        QuotationId = app.QuotationId,
+                        ApplicationName = applicationData?.ApplicationName ?? "",
+                        CompanyName = applicationData?.Orgnization_Name ?? "",
                         ApplicationId = app.ApplicationId,
-                        
+                        Certification_Name = certificateData?.Certificate_Name ?? "",
                         ReceiveDate = app.CreatedOn,
-                        
-                       
+                      //   AssignedUserName =  _mongoDbService.ReviewerName(applicationData?.Fk_UserId)
                     });
-
                 }
 
 
