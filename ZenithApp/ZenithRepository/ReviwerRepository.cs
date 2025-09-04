@@ -830,8 +830,29 @@ namespace ZenithApp.ZenithRepository
                     {  
                         var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.Id, request.applicationId);
 
+                        //  var data = await _iso.Find(filter).FirstOrDefaultAsync();
                         var data = await _iso.Find(filter).FirstOrDefaultAsync();
-                        
+                        var allVersions = await _iso
+                       .Find(x => x.Id == request.applicationId)
+                       .ToListAsync();
+
+
+                        if (allVersions == null || !allVersions.Any())
+                        {
+                            response.Message = "Application not found..";
+                            response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                            response.Success = false;
+                            response.ResponseCode = 1;
+                            return response;
+                        }
+
+                        var ownreviewerfilter = Builders<tbl_ISO_Application>.Filter.And(
+                   Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                   Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                  Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, data.AssignTo),
+                   Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
+               );
+                        var ownReviewerfilter = await _iso.Find(ownreviewerfilter).FirstOrDefaultAsync();
 
                         var anotherreviewerfilter = Builders<tbl_ISO_Application>.Filter.And(
                             Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
@@ -850,6 +871,7 @@ namespace ZenithApp.ZenithRepository
 
                         var adminData = await _iso.Find(adminfilter).FirstOrDefaultAsync();
 
+
                         if (anotherReviewerData != null)
                         {
                             if (adminData != null)
@@ -860,9 +882,31 @@ namespace ZenithApp.ZenithRepository
                             else
                             {
                                 // Only Reviewer > Trainee
-                                MergeDataInPlace(data, null, anotherReviewerData);
+                                //MergeDataInPlace(anotherReviewerData, null,ownReviewerfilter);
+                                MergeDataInPlace(data, anotherReviewerData, ownReviewerfilter);
                             }
                         }
+
+
+                        // Corrected code to fetch and merge all versions
+
+
+
+
+                        //// Find the version for the current user and other relevant versions.
+                        //var currentUserVersion = allVersions.FirstOrDefault(x => x.AssignTo == UserId.ToString());
+                        //var baseVersion = allVersions.FirstOrDefault(x => string.IsNullOrEmpty(x.AssignTo));
+                        //var otherUserVersions = allVersions.Where(x => x.AssignTo != UserId.ToString() && !string.IsNullOrEmpty(x.AssignTo));
+
+                        // Start with the base document or a new one if it doesn't exist.
+                        //var mergedDocument = baseVersion ?? new tbl_ISO_Application();
+
+                        // Merge all other versions, including the current user's, into the base document.
+                        // This ensures all changes are combined.
+                        //foreach (var version in allVersions.Where(x => x.ApplicationId == request.applicationId))
+                        //{
+                        //    mergedDocument = MergeDataInPlace(baseVersion, version);
+                        //}
 
 
 
@@ -992,7 +1036,7 @@ namespace ZenithApp.ZenithRepository
                     if (request.CertificationName == "ISO")
                     {
                         var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId)
-                             & Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_UserId, request.userId);
+                             & Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, request.userId);
 
                         var data = await _iso.Find(filter).FirstOrDefaultAsync();
 
@@ -1102,66 +1146,71 @@ namespace ZenithApp.ZenithRepository
             return response;
         }
 
-        //private void MergeDataInPlace<T>(T target, T source)
-        //{
-        //    var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" };
-
-        //    // Step 1: Check if source has at least one non-empty field
-        //    bool hasAnyValue = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-        //        .Where(p => !excludedFields.Contains(p.Name))
-        //        .Any(p => HasValue(p.GetValue(source)));
-
-        //    if (!hasAnyValue)
-        //    {
-        //        // Nothing to merge, return
-        //        return;
-        //    }
-
-        //    // Step 2: Merge values (field-by-field) from source to target
-        //    foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        //    {
-        //        if (excludedFields.Contains(prop.Name))
-        //            continue;
-
-        //        var sourceValue = prop.GetValue(source);
-        //        if (HasValue(sourceValue))
-        //        {
-        //            prop.SetValue(target, sourceValue);
-        //        }
-        //    }
-        //}
-
-       
-
-        private void MergeDataInPlace<T>(T target, T admin, T reviewer)
+        private void MergeDataInPlace<T>(T target, T source)
         {
-            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" , "ActiveReviwer" };
+            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" };
+
+            // Step 1: Check if source has at least one non-empty field
+            bool hasAnyValue = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => !excludedFields.Contains(p.Name))
+                .Any(p => HasValue(p.GetValue(source)));
+
+            if (!hasAnyValue)
+            {
+                // Nothing to merge, return
+                return;
+            }
+
+            // Step 2: Merge values (field-by-field) from source to target
+            foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (excludedFields.Contains(prop.Name))
+                    continue;
+
+                var sourceValue = prop.GetValue(source);
+                if (HasValue(sourceValue))
+                {
+                    prop.SetValue(target, sourceValue);
+                }
+            }
+        }
+
+
+
+        private void MergeDataInPlace<T>(T target, params T[] sources)
+        {
+            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState", "ActiveReviwer" };
+
+            // Expect that all sources have an UpdatedAt property
+            var updatedAtProp = typeof(T).GetProperty("UpdatedAt");
 
             foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (excludedFields.Contains(prop.Name))
                     continue;
 
-                var currentValue = prop.GetValue(target);   // base = trainee
-                var adminValue = admin != null ? prop.GetValue(admin) : null;
-                var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
+                object selectedValue = null;
+                DateTime latestUpdate = DateTime.MinValue;
 
-                if (HasValue(adminValue))
+                foreach (var source in sources.Where(s => s != null))
                 {
-                    // Admin has highest priority
-                    prop.SetValue(target, adminValue);
+                    var value = prop.GetValue(source);
+                    var updatedAt = (DateTime?)updatedAtProp?.GetValue(source);
+
+                    if (HasValue(value) && updatedAt.HasValue && updatedAt.Value > latestUpdate)
+                    {
+                        latestUpdate = updatedAt.Value;
+                        selectedValue = value;
+                    }
                 }
-                else if (HasValue(reviewerValue))
+
+                if (selectedValue != null)
                 {
-                    // Reviewer fallback
-                    prop.SetValue(target, reviewerValue);
-                }
-                else
-                {
-                    // Keep trainee value (already in target)
+                    prop.SetValue(target, selectedValue);
                 }
             }
         }
+
         private bool HasValue(object value)
         {
             if (value == null) return false;
@@ -1177,21 +1226,139 @@ namespace ZenithApp.ZenithRepository
             return true;
         }
 
+        //private bool HasValue(object value)
+        //{
+        //    if (value == null) return false;
+        //    if (value is string str) return !string.IsNullOrWhiteSpace(str);
+
+        //    var type = value.GetType();
+        //    if (type.IsValueType)
+        //        return !value.Equals(Activator.CreateInstance(type));
+
+        //    if (value is System.Collections.IEnumerable enumerable && !(value is string))
+        //        return enumerable.GetEnumerator().MoveNext();
+
+        //    return true;
+        //}
+
+        //private void MergeDataInPlace<T>(T target, T admin, T reviewer)
+        //{
+        //    var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState", "ActiveReviwer" };
+
+        //    foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        //    {
+        //        if (excludedFields.Contains(prop.Name))
+        //            continue;
+
+        //        var currentValue = prop.GetValue(target);   // trainee
+        //        var adminValue = admin != null ? prop.GetValue(admin) : null;
+        //        var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
+
+        //        // Handle collections (like reviewerKeyPersonnel)
+        //        if (typeof(System.Collections.IEnumerable).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string))
+        //        {
+        //            var merged = MergeCollections(currentValue, adminValue, reviewerValue);
+        //            prop.SetValue(target, merged);
+        //            continue;
+        //        }
+
+        //        // Normal scalar merge
+        //        if (HasValue(adminValue))
+        //        {
+        //            prop.SetValue(target, adminValue);
+        //        }
+        //        else if (HasValue(reviewerValue))
+        //        {
+        //            prop.SetValue(target, reviewerValue);
+        //        }
+        //    }
+        //}
+
+        //private object MergeCollections(object traineeVal, object adminVal, object reviewerVal)
+        //{
+        //    var traineeList = (traineeVal as System.Collections.IEnumerable)?.Cast<object>().ToList() ?? new List<object>();
+        //    var adminList = (adminVal as System.Collections.IEnumerable)?.Cast<object>().ToList() ?? new List<object>();
+        //    var reviewerList = (reviewerVal as System.Collections.IEnumerable)?.Cast<object>().ToList() ?? new List<object>();
+
+        //    // Detect element type (LabelValue instead of object)
+        //    var elementType = traineeVal?.GetType().GetGenericArguments().FirstOrDefault()
+        //                   ?? reviewerVal?.GetType().GetGenericArguments().FirstOrDefault()
+        //                   ?? adminVal?.GetType().GetGenericArguments().FirstOrDefault()
+        //                   ?? typeof(object);
+
+        //    var listType = typeof(List<>).MakeGenericType(elementType);
+        //    var mergedList = (System.Collections.IList)Activator.CreateInstance(listType);
+
+        //    // Try to detect a "key property" like ActivityName
+        //    string keyProp = traineeList.Concat(reviewerList).Concat(adminList)
+        //                                .SelectMany(x => x.GetType().GetProperties())
+        //                                .Select(p => p.Name)
+        //                                .FirstOrDefault(n => n.Equals("ActivityName", StringComparison.OrdinalIgnoreCase));
+
+        //    if (keyProp != null)
+        //    {
+        //        // Merge by key
+        //        var allItems = traineeList.Concat(reviewerList).Concat(adminList)
+        //                                  .GroupBy(x => x.GetType().GetProperty(keyProp)?.GetValue(x)?.ToString());
+
+        //        foreach (var group in allItems)
+        //        {
+        //            var traineeItem = group.FirstOrDefault(x => traineeList.Contains(x));
+        //            var reviewerItem = group.FirstOrDefault(x => reviewerList.Contains(x));
+        //            var adminItem = group.FirstOrDefault(x => adminList.Contains(x));
+
+        //            mergedList.Add(MergeObject(traineeItem, reviewerItem, adminItem, elementType));
+        //        }
+        //    }
+        //    else
+        //    {
+        //        // No key property → merge by index
+        //        int maxCount = new[] { traineeList.Count, reviewerList.Count, adminList.Count }.Max();
+
+        //        for (int i = 0; i < maxCount; i++)
+        //        {
+        //            var traineeItem = i < traineeList.Count ? traineeList[i] : null;
+        //            var reviewerItem = i < reviewerList.Count ? reviewerList[i] : null;
+        //            var adminItem = i < adminList.Count ? adminList[i] : null;
+
+        //            mergedList.Add(MergeObject(traineeItem, reviewerItem, adminItem, elementType));
+        //        }
+        //    }
+
+        //    return mergedList;
+        //}
+
+        //private object MergeObject(object trainee, object reviewer, object admin, Type elementType)
+        //{
+        //    var instance = Activator.CreateInstance(elementType);
+
+        //    foreach (var prop in elementType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        //    {
+        //        var traineeValue = trainee != null ? prop.GetValue(trainee) : null;
+        //        var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
+        //        var adminValue = admin != null ? prop.GetValue(admin) : null;
+
+        //        if (HasValue(adminValue))
+        //            prop.SetValue(instance, adminValue);
+        //        else if (HasValue(reviewerValue))
+        //            prop.SetValue(instance, reviewerValue);
+        //        else
+        //            prop.SetValue(instance, traineeValue);
+        //    }
+
+        //    return instance;
+        //}
 
 
         private async Task<List<tbl_ApplicationFieldComment>> GetFieldCommentsAsync(string applicationId,string fkCertificate,string UserId, IMongoCollection<tbl_ApplicationFieldComment> commentCollection)
         {
             var filter = Builders<tbl_ApplicationFieldComment>.Filter.And(
                 Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.ApplicationId, applicationId),
-                Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, fkCertificate),
-                Builders<tbl_ApplicationFieldComment>.Filter.Ne(c => c.Fk_User, UserId)
+                Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, fkCertificate)
+                //Builders<tbl_ApplicationFieldComment>.Filter.Ne(c => c.Fk_User, UserId)
             );
 
-            //return await commentCollection
-            //    .Find(filter)
-            //    .SortByDescending(c => c.CreatedOn)
-            //    .ToListAsync();
-
+          
             var pipeline = commentCollection.Aggregate()
         .Match(filter)
         .SortByDescending(c => c.CreatedOn) // or use c.Id
@@ -1203,6 +1370,24 @@ namespace ZenithApp.ZenithRepository
             return await pipeline.ToListAsync();
         }
 
+        public string ProcessSubmit(addReviewerApplicationRequest request)
+        {
+            string Adminstatus = "687a2925694d00158c9bf265"; // InProgress
+           
+
+            if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit)
+                && request.IsFinalSubmit.Trim().ToLower() == "true")
+            {
+                if (request.ActiveReviwer == "ReviwerOne")
+                    Adminstatus = "68930d9066a57e1b128af2e9"; // Reviewer One Submit
+                else if (request.ActiveReviwer == "ReviwerTwo")
+                    Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                else
+                    Adminstatus = "687a2925694d00158c9bf267"; // SendToApproval
+            }
+
+            return Adminstatus;
+        }
 
 
 
@@ -1222,30 +1407,30 @@ namespace ZenithApp.ZenithRepository
 
                     bool? isFinalSubmit = null;
                     DateTime? submitDate = null;
-                    string status = "687a2925694d00158c9bf265";//InProgress
-                    string Adminstatus = "687a2925694d00158c9bf265";//InProgress
+                    string status = ProcessSubmit(request); ;//InProgress
+                    string Adminstatus = ProcessSubmit(request); ;//InProgress
 
                     // If user provided isFinalSubmit flag
-                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
-                    {
-                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
+                    //if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
+                    //{
+                    //    isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
 
-                        if (isFinalSubmit == true)
-                        {
-                            submitDate = DateTime.Now;
-                            status = "687a2925694d00158c9bf267"; //SendToApproval
-                            if (request.ActiveReviwer == "ReviwerOne")
-                            {
-                                Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
-                            }
-                            else if (request.ActiveReviwer == "ReviwerTwo")
-                            {
-                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
-                            }
-                        }
+                    //    if (isFinalSubmit == true)
+                    //    {
+                    //        submitDate = DateTime.Now;
+                    //        status = "687a2925694d00158c9bf267"; //SendToApproval
+                    //        if (request.ActiveReviwer == "ReviwerOne")
+                    //        {
+                    //            Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+                    //        }
+                    //        else if (request.ActiveReviwer == "ReviwerTwo")
+                    //        {
+                    //            Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                    //        }
+                    //    }
 
 
-                    }
+                    //}
 
                     if (!string.IsNullOrEmpty(request.ApplicationId))
                     {

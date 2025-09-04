@@ -12,8 +12,11 @@ namespace ZenithApp.ZenithMessage
 
         public string? CertificateType { get; set; }
 
-        
+        public bool isSubmit { get; set;}
 
         public Dictionary<string, object> QuotationData { get; set; }
+        public List<Dictionary<string, object>>? Terms { get; set; }
+        //public string? ValidityofQuotation { get; set; }
+        //public Dictionary<string, object> Enclouser { get; set; }
     }
 }
