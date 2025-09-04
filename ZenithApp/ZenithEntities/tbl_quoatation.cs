@@ -13,11 +13,12 @@ namespace ZenithApp.ZenithEntities
         public string ApplicationId { get; set; }
         public string QuotationId { get; set; }
         public string Currency { get; set; }
-
+        public bool IsSubmit { get; set; }
         public string CertificateType { get; set; }
 
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
 
         public BsonDocument QuotationData { get; set; }
+        public BsonArray Terms { get; set; }
     }
 }
