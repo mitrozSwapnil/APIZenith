@@ -20,24 +20,6 @@ namespace ZenithApp.Controllers
             _adminRepository = adminRepository;
             _acc = acc;
         }
-        //public ActionResult<List<tbl_master_designation>> Getdesignation()
-        //{
-        //    var data = _adminRepository.Getdesignation();
-
-        //    if (data == null || data.Count == 0)
-        //        return NotFound();
-
-        //    return Ok(data);
-        //}
-
-
-
-        //[HttpPost("Add-designation")]
-        //public ActionResult<tbl_master_designation> CreateMasterDesignation(tbl_master_designation designation)
-        //{
-        //    _adminRepository.CreateMasterDesignation(designation);
-        //    return CreatedAtAction(nameof(Getdesignation), designation);
-        //}
 
         [HttpPost("GetAdminDashboard")]
         public IActionResult GetAdminDashboard(getDashboardRequest model)
@@ -144,6 +126,15 @@ namespace ZenithApp.Controllers
             _acc.HttpContext?.Session.SetString("UserId", UserId);
             return this.ProcessRequest<gethistoryResponse>(model);
         }
+        [HttpPost("SaveApplicationStatus")]
+        public IActionResult SaveApplicationStatus(statusRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<BaseResponse>(model);
+        }
 
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
@@ -192,6 +183,10 @@ namespace ZenithApp.Controllers
             else if (action == nameof(GetHistory))
             {
                 return _adminRepository.GetHistory(request as gethistoryRequest).Result;
+            }
+            else if (action == nameof(SaveApplicationStatus))
+            {
+                return _adminRepository.SaveApplicationStatus(request as statusRequest).Result;
             }
 
             throw new NotImplementedException();
