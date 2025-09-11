@@ -7,6 +7,17 @@ obj/
 .obj/
 /obj/
 
+# Ignore sensitive configs
+appsettings.json
+appsettings.*.json
+
+# Ignore dotenv files
+.env
+*.env
+
+# Ignore user secrets
+secrets.json
+
 
 # User-specific files
 .vscode/
