@@ -2,11 +2,13 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using MongoDB.Driver;
 using System.Text;
 using ZenithApp.CommonServices;
 using ZenithApp.Services;
 using ZenithApp.Settings;
+using ZenithApp.ZenithMessage;
 using ZenithApp.ZenithRepository;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,7 +22,8 @@ builder.Services.AddScoped<QuotationRepository>();
 builder.Services.AddScoped<ReviwerRepository>();
 builder.Services.AddScoped<AdminRepository>();
 builder.Services.AddScoped<MasterRepository>();
-
+builder.Services.Configure<S3Settings>(builder.Configuration.GetSection("S3Settings"));
+builder.Services.AddSingleton<S3Repository>(); // register AWS S3 service
 
 builder.Services.AddSingleton<IMongoClient>(sp =>
 {
@@ -84,7 +87,37 @@ builder.Services.AddScoped<CustomerApplicationRepository>();
 
 builder.Services.AddSingleton<AuthService>();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Zenith API", Version = "v1" });
+
+    // 🔒 Add JWT Bearer Auth
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter 'Bearer' [space] and then your valid JWT token.\n\nExample: \"Bearer eyJhbGciOi...\""
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
 
 var app = builder.Build();
 

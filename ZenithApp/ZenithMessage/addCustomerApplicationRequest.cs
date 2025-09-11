@@ -1,4 +1,5 @@
-﻿using ZenithApp.ZenithEntities;
+﻿using Microsoft.AspNetCore.Mvc;
+using ZenithApp.ZenithEntities;
 
 namespace ZenithApp.ZenithMessage
 {
@@ -9,15 +10,18 @@ namespace ZenithApp.ZenithMessage
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
         public string? EmailId { get; set; }
+        public IFormFile? Annexure { get; set; }
 
         public List<string>? Fk_ApplicationCertificates { get; set; }
         public List<string>? Fk_Product_Certificates { get; set; }
 
         public List<KeyPersonnelList>? Fk_Key_Personnels { get; set; }
         public List<CustomerSiteList>? Fk_Customer_Sites { get; set; }
+
+        [BindProperty(Name = "fk_Customer_Entity")]
         public List<CustomerEntityList>? Fk_Customer_Entity { get; set; }
 
-        public DateTime? Expected_Audit_Date { get; set; }
+        public string? Expected_Audit_Date { get; set; }
         public string? Holiday { get; set; }
         public string? Audit_Language { get; set; }
         public string? ConsultantName { get; set; }

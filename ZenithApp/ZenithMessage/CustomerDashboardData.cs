@@ -12,6 +12,8 @@
         public string? Status { get; set; }
         public long? CertificateCount { get; set; }
         public DateTime? ReceiveDate { get; set; }
+        public DateTime? TargetDate { get; set; }
+        public DateTime? CreatedAt { get; set; }
         public string? AssignedUserName { get; set; }
         
 

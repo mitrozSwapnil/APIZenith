@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Amazon.S3.Model;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -10,6 +11,7 @@ using ZenithApp.CommonServices;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace ZenithApp.ZenithRepository
 {
@@ -33,6 +35,7 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_Master_Threat> _masterthreat;
         private readonly IMongoCollection<tbl_Master_Remark> _masterremark;
         private readonly IMongoCollection<tbl_FSSC_Application> _fssc;
+        private readonly IMongoCollection<tbl_quoatation> _quotation ;
         private readonly MongoDbService _mongoDbService;
         private readonly IMongoCollection<tbl_ApplicationReview> _reviews;
         private readonly IMongoCollection<tbl_ApplicationFieldHistory> _history;
@@ -484,7 +487,18 @@ namespace ZenithApp.ZenithRepository
                     }
                 }
 
-                // Search filter
+                // ✅ Status filter using Flag
+                if (!string.IsNullOrWhiteSpace(request.Flag))
+                {
+                    var flag = request.Flag.Trim().ToLower();
+
+                    dashboardList = dashboardList
+                        .Where(x => !string.IsNullOrEmpty(x.Status) &&
+                                    x.Status.Trim().ToLower() == flag)
+                        .ToList();
+                }
+
+                // ✅ Search filter
                 if (!string.IsNullOrWhiteSpace(request.SearchTerm))
                 {
                     var searchTerm = request.SearchTerm.Trim().ToLower();
@@ -495,6 +509,11 @@ namespace ZenithApp.ZenithRepository
                         )
                         .ToList();
                 }
+
+                // ✅ Sorting (descending by CreatedAt)
+                dashboardList = dashboardList
+                    .OrderByDescending(x => x.CreatedAt)
+                    .ToList();
 
                 // Pagination
                 var totalCount = dashboardList.Count;
@@ -508,8 +527,38 @@ namespace ZenithApp.ZenithRepository
                     TotalRecords = totalCount
                 };
 
+                // build filter once per user
+                var isoFilter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, UserId);
+                var icmedFilter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.AssignTo, UserId);
+                var icmedpFilter = Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.AssignTo, UserId);
+                var imdrFilter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.AssignTo, UserId);
+                var fsscFilter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.AssignTo, UserId);
+
+                var totalApplications =
+                    await _iso.CountDocumentsAsync(isoFilter) +
+                    await _icmed.CountDocumentsAsync(icmedFilter) +
+                    await _icmedplus.CountDocumentsAsync(icmedpFilter) +
+                    await _imdr.CountDocumentsAsync(imdrFilter) +
+                    await _fssc.CountDocumentsAsync(fsscFilter);
+
+                var totalQuotations = 0L;
+                if (_quotation != null)
+                {
+                    totalQuotations = await _quotation.CountDocumentsAsync(FilterDefinition<tbl_quoatation>.Empty);
+                }
+
+
+                var pannelData = new PannelDto
+                {
+                    totalApplication = (int)totalApplications,
+                    totalQuotation = (int)totalQuotations,
+                    totalAuditFile = 0,
+                    other = 0
+                };
+
                 response.Data = paginatedList;
                 response.Pagination = pagination;
+                response.Pannale = pannelData;
                 response.Message = "Dashboard fetched successfully.";
                 response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                 response.Success = true;
@@ -558,7 +607,9 @@ namespace ZenithApp.ZenithRepository
                         Certification_Name = masterCert.Certificate_Name,
                         Status = _status.Find(x => x.Id == statusId).FirstOrDefault()?.StatusName ?? "Pending",
                         ReceiveDate = app.GetType().GetProperty("Application_Received_date")?.GetValue(app) as DateTime?,
-                        AssignedUserName = _user.Find(x => x.Id == fkUserId).FirstOrDefault()?.FullName
+                        AssignedUserName = _user.Find(x => x.Id == fkUserId).FirstOrDefault()?.FullName,
+                        CreatedAt = app.GetType().GetProperty("CreatedAt")?.GetValue(app) as DateTime?,
+                        TargetDate = app.GetType().GetProperty("TargetDate")?.GetValue(app) as DateTime?,
                     });
                 }
             }
@@ -847,11 +898,11 @@ namespace ZenithApp.ZenithRepository
                         }
 
                         var ownreviewerfilter = Builders<tbl_ISO_Application>.Filter.And(
-                   Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
-                   Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
-                  Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, data.AssignTo),
-                   Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
-               );
+                               Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                               Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                              Builders<tbl_ISO_Application>.Filter.Eq(x => x.AssignTo, data.AssignTo),
+                               Builders<tbl_ISO_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
+                           );
                         var ownReviewerfilter = await _iso.Find(ownreviewerfilter).FirstOrDefaultAsync();
 
                         var anotherreviewerfilter = Builders<tbl_ISO_Application>.Filter.And(
@@ -887,29 +938,6 @@ namespace ZenithApp.ZenithRepository
                             }
                         }
 
-
-                        // Corrected code to fetch and merge all versions
-
-
-
-
-                        //// Find the version for the current user and other relevant versions.
-                        //var currentUserVersion = allVersions.FirstOrDefault(x => x.AssignTo == UserId.ToString());
-                        //var baseVersion = allVersions.FirstOrDefault(x => string.IsNullOrEmpty(x.AssignTo));
-                        //var otherUserVersions = allVersions.Where(x => x.AssignTo != UserId.ToString() && !string.IsNullOrEmpty(x.AssignTo));
-
-                        // Start with the base document or a new one if it doesn't exist.
-                        //var mergedDocument = baseVersion ?? new tbl_ISO_Application();
-
-                        // Merge all other versions, including the current user's, into the base document.
-                        // This ensures all changes are combined.
-                        //foreach (var version in allVersions.Where(x => x.ApplicationId == request.applicationId))
-                        //{
-                        //    mergedDocument = MergeDataInPlace(baseVersion, version);
-                        //}
-
-
-
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
                         var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
                         var status = _mongoDbService.StatusName(data.Status);
@@ -926,57 +954,281 @@ namespace ZenithApp.ZenithRepository
                         var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Id, request.applicationId);
 
                         var data = await _fssc.Find(filter).FirstOrDefaultAsync();
+                        var allVersions = await _fssc
+                            .Find(x => x.Id == request.applicationId)
+                            .ToListAsync();
+
+                        if (allVersions == null || !allVersions.Any())
+                        {
+                            response.Message = "Application not found..";
+                            response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                            response.Success = false;
+                            response.ResponseCode = 1;
+                            return response;
+                        }
+
+                        // Own Reviewer (same assignTo but not trainee account)
+                        var ownreviewerfilter = Builders<tbl_FSSC_Application>.Filter.And(
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_FSSC_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // exclude trainee
+                        );
+                        var ownReviewerData = await _fssc.Find(ownreviewerfilter).FirstOrDefaultAsync();
+
+                        // Another Reviewer (different reviewer, not trainee)
+                        var anotherreviewerfilter = Builders<tbl_FSSC_Application>.Filter.And(
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_FSSC_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_FSSC_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
+                        );
+                        var anotherReviewerData = await _fssc.Find(anotherreviewerfilter).FirstOrDefaultAsync();
+
+                        // Admin (not same reviewer and not anotherReviewer)
+                        var adminfilter = Builders<tbl_FSSC_Application>.Filter.And(
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_FSSC_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_FSSC_Application>.Filter.Ne(x => x.AssignTo, anotherReviewerData.AssignTo)
+                        );
+                        var adminData = await _fssc.Find(adminfilter).FirstOrDefaultAsync();
+
+                        // Merge priority: Admin > Reviewer > Trainee
+                        if (anotherReviewerData != null)
+                        {
+                            if (adminData != null)
+                            {
+                                MergeDataInPlace(data, adminData, anotherReviewerData);
+                            }
+                            else
+                            {
+                                MergeDataInPlace(data, anotherReviewerData, ownReviewerData);
+                            }
+                        }
+
+                        // Add certificate, reviewer, status, and comments
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
                         var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
                         var status = _mongoDbService.StatusName(data.Status);
-
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
 
                         response.Data = data;
+                        response.Comments = comments;
                         response.CertificateName = cerificateName;
                         response.statusName = status;
                     }
+
                     else if (request.CertificationName == "ICMED")
                     {
                         var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.applicationId);
 
                         var data = await _icmed.Find(filter).FirstOrDefaultAsync();
+                        var allVersions = await _icmed
+                            .Find(x => x.Id == request.applicationId)
+                            .ToListAsync();
+
+                        if (allVersions == null || !allVersions.Any())
+                        {
+                            response.Message = "Application not found..";
+                            response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                            response.Success = false;
+                            response.ResponseCode = 1;
+                            return response;
+                        }
+
+                        // Own Reviewer (same assignTo but not trainee account)
+                        var ownreviewerfilter = Builders<tbl_ICMED_Application>.Filter.And(
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_ICMED_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // exclude trainee
+                        );
+                        var ownReviewerData = await _icmed.Find(ownreviewerfilter).FirstOrDefaultAsync();
+
+                        // Another Reviewer (different reviewer, not trainee)
+                        var anotherreviewerfilter = Builders<tbl_ICMED_Application>.Filter.And(
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_ICMED_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_ICMED_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
+                        );
+                        var anotherReviewerData = await _icmed.Find(anotherreviewerfilter).FirstOrDefaultAsync();
+
+                        // Admin (not same reviewer and not anotherReviewer)
+                        var adminfilter = Builders<tbl_ICMED_Application>.Filter.And(
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_ICMED_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_ICMED_Application>.Filter.Ne(x => x.AssignTo, anotherReviewerData.AssignTo)
+                        );
+                        var adminData = await _icmed.Find(adminfilter).FirstOrDefaultAsync();
+
+                        // Merge priority: Admin > Reviewer > Trainee
+                        if (anotherReviewerData != null)
+                        {
+                            if (adminData != null)
+                            {
+                                MergeDataInPlace(data, adminData, anotherReviewerData);
+                            }
+                            else
+                            {
+                                MergeDataInPlace(data, anotherReviewerData, ownReviewerData);
+                            }
+                        }
+
+                        // Add certificate, reviewer, status, and comments
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
                         var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
                         var status = _mongoDbService.StatusName(data.Status);
-
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
 
                         response.Data = data;
+                        response.Comments = comments;
                         response.CertificateName = cerificateName;
                         response.statusName = status;
                     }
+
                     else if (request.CertificationName == "ICMED_PLUS")
                     {
                         var filter = Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Id, request.applicationId);
 
                         var data = await _icmedplus.Find(filter).FirstOrDefaultAsync();
+                        var allVersions = await _icmedplus
+                            .Find(x => x.Id == request.applicationId)
+                            .ToListAsync();
+
+                        if (allVersions == null || !allVersions.Any())
+                        {
+                            response.Message = "Application not found..";
+                            response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                            response.Success = false;
+                            response.ResponseCode = 1;
+                            return response;
+                        }
+
+                        // Own Reviewer (same AssignTo but not trainee)
+                        var ownreviewerfilter = Builders<tbl_ICMED_PLUS_Application>.Filter.And(
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // exclude trainee
+                        );
+                        var ownReviewerData = await _icmedplus.Find(ownreviewerfilter).FirstOrDefaultAsync();
+
+                        // Another Reviewer (different reviewer, not trainee)
+                        var anotherreviewerfilter = Builders<tbl_ICMED_PLUS_Application>.Filter.And(
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
+                        );
+                        var anotherReviewerData = await _icmedplus.Find(anotherreviewerfilter).FirstOrDefaultAsync();
+
+                        // Admin (not same reviewer and not anotherReviewer)
+                        var adminfilter = Builders<tbl_ICMED_PLUS_Application>.Filter.And(
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Ne(x => x.AssignTo, anotherReviewerData.AssignTo)
+                        );
+                        var adminData = await _icmedplus.Find(adminfilter).FirstOrDefaultAsync();
+
+                        // Merge priority: Admin > Reviewer > Trainee
+                        if (anotherReviewerData != null)
+                        {
+                            if (adminData != null)
+                            {
+                                MergeDataInPlace(data, adminData, anotherReviewerData);
+                            }
+                            else
+                            {
+                                MergeDataInPlace(data, anotherReviewerData, ownReviewerData);
+                            }
+                        }
+
+                        // Add certificate, reviewer, status, and comments
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
                         var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
                         var status = _mongoDbService.StatusName(data.Status);
-
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
 
                         response.Data = data;
+                        response.Comments = comments;
                         response.CertificateName = cerificateName;
                         response.statusName = status;
                     }
+
                     else if (request.CertificationName == "IMDR")
                     {
                         var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.applicationId);
 
                         var data = await _imdr.Find(filter).FirstOrDefaultAsync();
+                        var allVersions = await _imdr
+                            .Find(x => x.Id == request.applicationId)
+                            .ToListAsync();
+
+                        if (allVersions == null || !allVersions.Any())
+                        {
+                            response.Message = "Application not found..";
+                            response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                            response.Success = false;
+                            response.ResponseCode = 1;
+                            return response;
+                        }
+
+                        // Own Reviewer (same AssignTo but not trainee)
+                        var ownreviewerfilter = Builders<tbl_IMDR_Application>.Filter.And(
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_IMDR_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // exclude trainee
+                        );
+                        var ownReviewerData = await _imdr.Find(ownreviewerfilter).FirstOrDefaultAsync();
+
+                        // Another Reviewer (different reviewer, not trainee)
+                        var anotherreviewerfilter = Builders<tbl_IMDR_Application>.Filter.And(
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_IMDR_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_IMDR_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768")
+                        );
+                        var anotherReviewerData = await _imdr.Find(anotherreviewerfilter).FirstOrDefaultAsync();
+
+                        // Admin (not same reviewer and not anotherReviewer)
+                        var adminfilter = Builders<tbl_IMDR_Application>.Filter.And(
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                            Builders<tbl_IMDR_Application>.Filter.Ne(x => x.AssignTo, data.AssignTo),
+                            Builders<tbl_IMDR_Application>.Filter.Ne(x => x.AssignTo, anotherReviewerData.AssignTo)
+                        );
+                        var adminData = await _imdr.Find(adminfilter).FirstOrDefaultAsync();
+
+                        // Merge priority: Admin > Reviewer > Trainee
+                        if (anotherReviewerData != null)
+                        {
+                            if (adminData != null)
+                            {
+                                MergeDataInPlace(data, adminData, anotherReviewerData);
+                            }
+                            else
+                            {
+                                MergeDataInPlace(data, anotherReviewerData, ownReviewerData);
+                            }
+                        }
+
+                        // Add certificate, reviewer, status, and comments
                         var cerificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
                         var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
                         var status = _mongoDbService.StatusName(data.Status);
-
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
 
                         response.Data = data;
+                        response.Comments = comments;
                         response.CertificateName = cerificateName;
                         response.statusName = status;
                     }
+
                     else
                     {
                         response.Message = "Invalid Certification Name.";
@@ -1226,129 +1478,7 @@ namespace ZenithApp.ZenithRepository
             return true;
         }
 
-        //private bool HasValue(object value)
-        //{
-        //    if (value == null) return false;
-        //    if (value is string str) return !string.IsNullOrWhiteSpace(str);
-
-        //    var type = value.GetType();
-        //    if (type.IsValueType)
-        //        return !value.Equals(Activator.CreateInstance(type));
-
-        //    if (value is System.Collections.IEnumerable enumerable && !(value is string))
-        //        return enumerable.GetEnumerator().MoveNext();
-
-        //    return true;
-        //}
-
-        //private void MergeDataInPlace<T>(T target, T admin, T reviewer)
-        //{
-        //    var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState", "ActiveReviwer" };
-
-        //    foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        //    {
-        //        if (excludedFields.Contains(prop.Name))
-        //            continue;
-
-        //        var currentValue = prop.GetValue(target);   // trainee
-        //        var adminValue = admin != null ? prop.GetValue(admin) : null;
-        //        var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
-
-        //        // Handle collections (like reviewerKeyPersonnel)
-        //        if (typeof(System.Collections.IEnumerable).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string))
-        //        {
-        //            var merged = MergeCollections(currentValue, adminValue, reviewerValue);
-        //            prop.SetValue(target, merged);
-        //            continue;
-        //        }
-
-        //        // Normal scalar merge
-        //        if (HasValue(adminValue))
-        //        {
-        //            prop.SetValue(target, adminValue);
-        //        }
-        //        else if (HasValue(reviewerValue))
-        //        {
-        //            prop.SetValue(target, reviewerValue);
-        //        }
-        //    }
-        //}
-
-        //private object MergeCollections(object traineeVal, object adminVal, object reviewerVal)
-        //{
-        //    var traineeList = (traineeVal as System.Collections.IEnumerable)?.Cast<object>().ToList() ?? new List<object>();
-        //    var adminList = (adminVal as System.Collections.IEnumerable)?.Cast<object>().ToList() ?? new List<object>();
-        //    var reviewerList = (reviewerVal as System.Collections.IEnumerable)?.Cast<object>().ToList() ?? new List<object>();
-
-        //    // Detect element type (LabelValue instead of object)
-        //    var elementType = traineeVal?.GetType().GetGenericArguments().FirstOrDefault()
-        //                   ?? reviewerVal?.GetType().GetGenericArguments().FirstOrDefault()
-        //                   ?? adminVal?.GetType().GetGenericArguments().FirstOrDefault()
-        //                   ?? typeof(object);
-
-        //    var listType = typeof(List<>).MakeGenericType(elementType);
-        //    var mergedList = (System.Collections.IList)Activator.CreateInstance(listType);
-
-        //    // Try to detect a "key property" like ActivityName
-        //    string keyProp = traineeList.Concat(reviewerList).Concat(adminList)
-        //                                .SelectMany(x => x.GetType().GetProperties())
-        //                                .Select(p => p.Name)
-        //                                .FirstOrDefault(n => n.Equals("ActivityName", StringComparison.OrdinalIgnoreCase));
-
-        //    if (keyProp != null)
-        //    {
-        //        // Merge by key
-        //        var allItems = traineeList.Concat(reviewerList).Concat(adminList)
-        //                                  .GroupBy(x => x.GetType().GetProperty(keyProp)?.GetValue(x)?.ToString());
-
-        //        foreach (var group in allItems)
-        //        {
-        //            var traineeItem = group.FirstOrDefault(x => traineeList.Contains(x));
-        //            var reviewerItem = group.FirstOrDefault(x => reviewerList.Contains(x));
-        //            var adminItem = group.FirstOrDefault(x => adminList.Contains(x));
-
-        //            mergedList.Add(MergeObject(traineeItem, reviewerItem, adminItem, elementType));
-        //        }
-        //    }
-        //    else
-        //    {
-        //        // No key property → merge by index
-        //        int maxCount = new[] { traineeList.Count, reviewerList.Count, adminList.Count }.Max();
-
-        //        for (int i = 0; i < maxCount; i++)
-        //        {
-        //            var traineeItem = i < traineeList.Count ? traineeList[i] : null;
-        //            var reviewerItem = i < reviewerList.Count ? reviewerList[i] : null;
-        //            var adminItem = i < adminList.Count ? adminList[i] : null;
-
-        //            mergedList.Add(MergeObject(traineeItem, reviewerItem, adminItem, elementType));
-        //        }
-        //    }
-
-        //    return mergedList;
-        //}
-
-        //private object MergeObject(object trainee, object reviewer, object admin, Type elementType)
-        //{
-        //    var instance = Activator.CreateInstance(elementType);
-
-        //    foreach (var prop in elementType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        //    {
-        //        var traineeValue = trainee != null ? prop.GetValue(trainee) : null;
-        //        var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
-        //        var adminValue = admin != null ? prop.GetValue(admin) : null;
-
-        //        if (HasValue(adminValue))
-        //            prop.SetValue(instance, adminValue);
-        //        else if (HasValue(reviewerValue))
-        //            prop.SetValue(instance, reviewerValue);
-        //        else
-        //            prop.SetValue(instance, traineeValue);
-        //    }
-
-        //    return instance;
-        //}
-
+        
 
         private async Task<List<tbl_ApplicationFieldComment>> GetFieldCommentsAsync(string applicationId,string fkCertificate,string UserId, IMongoCollection<tbl_ApplicationFieldComment> commentCollection)
         {
@@ -1375,8 +1505,7 @@ namespace ZenithApp.ZenithRepository
             string Adminstatus = "687a2925694d00158c9bf265"; // InProgress
            
 
-            if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit)
-                && request.IsFinalSubmit.Trim().ToLower() == "true")
+            if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit)&& request.IsFinalSubmit.Trim().ToLower() == "true")
             {
                 if (request.ActiveReviwer == "ReviwerOne")
                     Adminstatus = "68930d9066a57e1b128af2e9"; // Reviewer One Submit
@@ -1398,6 +1527,7 @@ namespace ZenithApp.ZenithRepository
             var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
             var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
             var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+            var usertyper = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Type;
 
             if (userType?.Trim().ToLower() == "reviewer")
             {
@@ -1411,26 +1541,49 @@ namespace ZenithApp.ZenithRepository
                     string Adminstatus = ProcessSubmit(request); ;//InProgress
 
                     // If user provided isFinalSubmit flag
-                    //if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
-                    //{
-                    //    isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
+                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
+                    {
+                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
 
-                    //    if (isFinalSubmit == true)
-                    //    {
-                    //        submitDate = DateTime.Now;
-                    //        status = "687a2925694d00158c9bf267"; //SendToApproval
-                    //        if (request.ActiveReviwer == "ReviwerOne")
-                    //        {
-                    //            Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
-                    //        }
-                    //        else if (request.ActiveReviwer == "ReviwerTwo")
-                    //        {
-                    //            Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
-                    //        }
-                    //    }
+                        if (isFinalSubmit == true)
+                        {
+                            submitDate = DateTime.Now;
+                            status = "687a2925694d00158c9bf267"; //SendToApproval
+                            
 
 
-                    //}
+                            if (usertyper == "Trainee")
+                            {
+                                status = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+
+                                await _iso.UpdateOneAsync(
+                                    x => x.ApplicationId == request.ApplicationId
+                                      && x.Fk_Certificate == request.Fk_Certificate
+                                      && x.AssignTo != "686fc25880b29ec6e7867768"
+                                      && x.AssignTo != UserId,
+                                    Builders<tbl_ISO_Application>.Update
+                                        .Set(x => x.Status, "68930d9066a57e1b128af2e9")
+                                        .Set(x => x.UpdatedAt, DateTime.Now) // optional
+                                );
+
+                            }
+                            else if (request.ActiveReviwer == "Reviewer")
+                            {
+                                status = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                            //this for admin status
+                            if (request.ActiveReviwer == "ReviwerOne")
+                            {
+                                Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+                            }
+                            else if (request.ActiveReviwer == "ReviwerTwo")
+                            {
+                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                        }
+
+
+                    }
 
                     if (!string.IsNullOrEmpty(request.ApplicationId))
                     {
@@ -1467,7 +1620,6 @@ namespace ZenithApp.ZenithRepository
                             .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
                             .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
                             .Set(x => x.Status, status)
-                            .Set(x => x.Application_Status, status)
                             .Set(x => x.IsDelete, request.IsDelete ?? false)
                             .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
                             .Set(x => x.Fk_UserId, request.Fk_UserId ?? UserId)
@@ -1525,41 +1677,69 @@ namespace ZenithApp.ZenithRepository
             var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
             var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
             var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+            var usertyper = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Type;
 
             if (userType?.Trim().ToLower() == "reviewer")
             {
                 try
                 {
                     var now = DateTime.Now;
+
                     bool? isFinalSubmit = null;
                     DateTime? submitDate = null;
-                    string status = "687a2925694d00158c9bf265";
-                    string Adminstatus = "687a2925694d00158c9bf265";
+                    string status = "687a2925694d00158c9bf265";//InProgress
+                    string Adminstatus = "687a2925694d00158c9bf265";//InProgress
 
+                    // If user provided isFinalSubmit flag
                     if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
                     {
                         isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
 
                         if (isFinalSubmit == true)
                         {
-                            submitDate = now;
-                            status = "687a2925694d00158c9bf267"; // Final submit
+                            submitDate = DateTime.Now;
+                            status = "687a2925694d00158c9bf267"; //SendToApproval
+
+
+
+                            if (usertyper == "Trainee")
+                            {
+                                status = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+
+                                await _fssc.UpdateOneAsync(
+                                    x => x.ApplicationId == request.ApplicationId
+                                      && x.Fk_Certificate == request.Fk_Certificate
+                                      && x.AssignTo != "686fc25880b29ec6e7867768"
+                                      && x.AssignTo != UserId,
+                                    Builders<tbl_FSSC_Application>.Update
+                                        .Set(x => x.Status, "68930d9066a57e1b128af2e9")
+                                        .Set(x => x.UpdatedAt, DateTime.Now) // optional
+                                );
+
+                            }
+                            else if (request.ActiveReviwer == "Reviewer")
+                            {
+                                status = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                            //this for admin status
                             if (request.ActiveReviwer == "ReviwerOne")
                             {
-                                Adminstatus = "68930d9066a57e1b128af2e9"; // Final Submit status for ReviwerOne
+                                Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
                             }
                             else if (request.ActiveReviwer == "ReviwerTwo")
                             {
-                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Final Submit status for ReviwerTwo
+                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
                             }
                         }
+
+
                     }
 
-                    if (!string.IsNullOrEmpty(request.Id))
+                    if (!string.IsNullOrEmpty(request.ApplicationId))
                     {
                         var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Id, request.Id);
 
-                        // Clear sub-lists
+                        // Hard delete sub-lists
                         var clearSubLists = Builders<tbl_FSSC_Application>.Update
                             .Set(x => x.Technical_Areas, new List<TechnicalAreasList>())
                             .Set(x => x.Accreditations, new List<AccreditationsList>())
@@ -1581,7 +1761,7 @@ namespace ZenithApp.ZenithRepository
 
                         await _fssc.UpdateOneAsync(filter, clearSubLists);
 
-                        // Update main fields
+                        // Update with new data
                         var update = Builders<tbl_FSSC_Application>.Update
                             .Set(x => x.ApplicationId, request.ApplicationId)
                             .Set(x => x.Application_Received_date, request.Application_Received_date)
@@ -1628,12 +1808,15 @@ namespace ZenithApp.ZenithRepository
                             .Set(x => x.subCategoryLists, request.subCategoryLists ?? new List<SubCategoryList>());
 
                         await _fssc.UpdateOneAsync(filter, update);
+
+                        // Update tbl_customer_certificates
                         var application = await _customercertificates.Find(x => x.Id == request.ApplicationId).FirstOrDefaultAsync();
                         if (application != null)
                         {
                             var updatestatus = Builders<tbl_customer_certificates>.Update.Set(x => x.status, Adminstatus);
                             await _customercertificates.UpdateOneAsync(x => x.Id == request.ApplicationId, updatestatus);
                         }
+
                         response.Message = "FSSC Application saved successfully.";
                         response.HttpStatusCode = HttpStatusCode.OK;
                         response.Success = true;
@@ -1657,132 +1840,14 @@ namespace ZenithApp.ZenithRepository
             return response;
         }
 
+
         public async Task<addReviewerApplicationResponse> SaveICMEDApplication(addICMEDApplicationRequest request)
         {
             var response = new addReviewerApplicationResponse();
             var UserId = _acc.HttpContext?.Session.GetString("UserId");
             var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
-            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
             var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
-
-            if (userType?.Trim().ToLower() == "reviewer")
-            {
-                try
-                {
-                    var now = DateTime.Now;
-                    bool? isFinalSubmit = null;
-                    DateTime? submitDate = null;
-                    string status = "687a2925694d00158c9bf265";
-                    string Adminstatus = "687a2925694d00158c9bf265";
-
-                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
-                    {
-                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
-
-                        if (isFinalSubmit == true)
-                        {
-                            submitDate = now;
-                            status = "687a2925694d00158c9bf267"; // Final submit
-                            if (request.ActiveReviwer == "ReviwerOne")
-                            {
-                                Adminstatus = "68930d9066a57e1b128af2e9"; // Final Submit status for ReviwerOne
-                            }
-                            else if (request.ActiveReviwer == "ReviwerTwo")
-                            {
-                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Final Submit status for ReviwerTwo
-                            }
-                        }
-                    }
-
-                    if (!string.IsNullOrEmpty(request.Id))
-                    {
-                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.Id);
-
-                        // Clear sub-lists
-                        var clearSubLists = Builders<tbl_ICMED_Application>.Update
-                            .Set(x => x.Technical_Areas, new List<TechnicalAreasList>())
-                            .Set(x => x.Accreditations, new List<AccreditationsList>())
-                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
-                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
-                            .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
-                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
-                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>());
-
-                            await _icmed.UpdateOneAsync(filter, clearSubLists);
-
-                        // Update main fields
-                        var update = Builders<tbl_ICMED_Application>.Update
-                            .Set(x => x.ApplicationId, request.ApplicationId)
-                            .Set(x => x.Application_Received_date, request.Application_Received_date)
-                            .Set(x => x.ApplicationReviewDate, request.ApplicationReviewDate)
-                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
-                            .Set(x => x.Certification_Name, request.Certification_Name)
-                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
-                            .Set(x => x.AssignTo, request.AssignTo ?? UserId)
-                            .Set(x => x.remark, request.remark)
-                            .Set(x => x.Audit_Type, request.Audit_Type)
-                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
-                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
-                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
-                            .Set(x => x.Audit_Lang, request.Audit_Lang)
-                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
-                            .Set(x => x.IsInterpreter, request.IsInterpreter)
-                            .Set(x => x.IsMultisitesampling, request.IsMultisitesampling)
-                            .Set(x => x.Total_site, request.Total_site)
-                            .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
-                            .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
-                            .Set(x => x.Status, status)
-                            .Set(x => x.IsDelete, false)
-                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
-                            .Set(x => x.Fk_UserId, request.Fk_UserId ?? UserId)
-                            .Set(x => x.UpdatedAt, now)
-                            .Set(x => x.UpdatedBy, UserId)
-                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
-                            .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
-                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
-                            .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
-                            .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
-                            .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
-                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>());
-
-                        await _icmed.UpdateOneAsync(filter, update);
-                        var application = await _customercertificates.Find(x => x.Id == request.ApplicationId).FirstOrDefaultAsync();
-                        if (application != null)
-                        {
-                            var updatestatus = Builders<tbl_customer_certificates>.Update.Set(x => x.status, Adminstatus);
-                            await _customercertificates.UpdateOneAsync(x => x.Id == request.ApplicationId, updatestatus);
-                        }
-                        response.Message = "ICMED Application saved successfully.";
-                        response.HttpStatusCode = HttpStatusCode.OK;
-                        response.Success = true;
-                        response.ResponseCode = 0;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    response.Message = "SaveICMEDApplication Exception: " + ex.Message;
-                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
-                    response.Success = false;
-                }
-            }
-            else
-            {
-                response.Message = "Invalid token.";
-                response.HttpStatusCode = HttpStatusCode.Unauthorized;
-                response.Success = false;
-            }
-
-            return response;
-        }
-
-
-        public async Task<addReviewerApplicationResponse> SaveIMDRApplication(addIMDRApplicationRequest request)
-        {
-            var response = new addReviewerApplicationResponse();
-            var UserId = _acc.HttpContext?.Session.GetString("UserId");
-            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
-            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
-            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+            var usertyper = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Type;
 
             if (userType?.Trim().ToLower() == "reviewer")
             {
@@ -1792,8 +1857,8 @@ namespace ZenithApp.ZenithRepository
 
                     bool? isFinalSubmit = null;
                     DateTime? submitDate = null;
-                    string status = "687a2925694d00158c9bf265";
-                    string Adminstatus = "687a2925694d00158c9bf265";
+                    string status = "687a2925694d00158c9bf265";//InProgress
+                    string Adminstatus = "687a2925694d00158c9bf265";//InProgress
 
                     // If user provided isFinalSubmit flag
                     if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
@@ -1803,167 +1868,49 @@ namespace ZenithApp.ZenithRepository
                         if (isFinalSubmit == true)
                         {
                             submitDate = DateTime.Now;
-                            status = "687a2925694d00158c9bf267"; // Final Submit status
+                            status = "687a2925694d00158c9bf267"; //SendToApproval
+
+
+
+                            if (usertyper == "Trainee")
+                            {
+                                status = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+
+                                await _icmed.UpdateOneAsync(
+                                    x => x.ApplicationId == request.ApplicationId
+                                      && x.Fk_Certificate == request.Fk_Certificate
+                                      && x.AssignTo != "686fc25880b29ec6e7867768"
+                                      && x.AssignTo != UserId,
+                                    Builders<tbl_ICMED_Application>.Update
+                                        .Set(x => x.Status, "68930d9066a57e1b128af2e9")
+                                        .Set(x => x.UpdatedAt, DateTime.Now) // optional
+                                );
+
+                            }
+                            else if (request.ActiveReviwer == "Reviewer")
+                            {
+                                status = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                            //this for admin status
                             if (request.ActiveReviwer == "ReviwerOne")
                             {
-                                Adminstatus = "68930d9066a57e1b128af2e9"; // Final Submit status for ReviwerOne
+                                Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
                             }
                             else if (request.ActiveReviwer == "ReviwerTwo")
                             {
-                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Final Submit status for ReviwerTwo
+                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
                             }
                         }
+
+
                     }
 
                     if (!string.IsNullOrEmpty(request.ApplicationId))
                     {
-
-
-                        var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.Id);
-
-                        // First, clear the sublists (hard delete)
-                        var clearSubLists = Builders<tbl_IMDR_Application>.Update
-                            .Set(x => x.Technical_Areas, new List<TechnicalAreasList>())
-                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
-                            .Set(x => x.KeyPersonnels, new List<KeyPersonnelList>())
-                            .Set(x => x.imdrManDays, new List<ImdrManDays>())
-                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
-                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
-                            .Set(x => x.mdrauditLists, new List<MDRAuditList>())
-                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>());
-
-                        await _imdr.UpdateOneAsync(filter, clearSubLists);
-
-                        // Then, update all fields including new sublist data
-                        var update = Builders<tbl_IMDR_Application>.Update
-                        .Set(x => x.ApplicationId, request.ApplicationId)
-                        .Set(x => x.Application_Received_date, request.Application_Received_date)
-                        .Set(x => x.Orgnization_Name, request.Orgnization_Name)
-                        .Set(x => x.Fk_Certificate, request.Fk_Certificate)
-                        .Set(x => x.AssignTo, request.AssignTo)
-                        .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
-                        .Set(x => x.DeviceMasterfile, request.DeviceMasterfile)
-                        .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
-                        .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
-                        .Set(x => x.Audit_Lang, request.Audit_Lang)
-                        .Set(x => x.ActiveState, request.ActiveState ?? 1)
-                        .Set(x => x.IsInterpreter, request.IsInterpreter)
-                        .Set(x => x.UpdatedAt, now)
-                        .Set(x => x.CreatedAt, now)
-                        .Set(x => x.CreatedBy,  UserId)
-                        .Set(x => x.UpdatedBy,  UserId)
-                        .Set(x => x.Status, status)
-                        .Set(x => x.IsDelete, false)
-                        .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
-                        .Set(x => x.Fk_UserId, request.Fk_UserId)
-                        .Set(x => x.Technical_Areas, request.Technical_Areas ?? new())
-                        .Set(x => x.CustomerSites, request.CustomerSites ?? new())
-                        .Set(x => x.KeyPersonnels, request.KeyPersonnels ?? new())
-                        .Set(x => x.imdrManDays, request.imdrManDays ?? new())
-                        .Set(x => x.reviewerKeyPersonnel, request.reviewerKeyPersonnel ?? new())
-                        .Set(x => x.ReviewerThreatList, request.ReviewerThreatList ?? new())
-                        .Set(x => x.ReviewerRemarkList, request.ReviewerRemarkList ?? new())
-                        .Set(x => x.mdrauditLists, request.mdrauditLists ?? new());
-
-                        var result = await _imdr.UpdateOneAsync(filter, update);
-                        var application = await _customercertificates.Find(x => x.Id == request.ApplicationId).FirstOrDefaultAsync();
-                        if (application != null)
-                        {
-                            var updatestatus = Builders<tbl_customer_certificates>.Update.Set(x => x.status, Adminstatus);
-                            await _customercertificates.UpdateOneAsync(x => x.Id == request.ApplicationId, updatestatus);
-                        }
-                        //response.Data = new List<tbl_ISO_Application> { result };
-                        response.Message = "Data Saved successfully.";
-                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                        response.Success = true;
-                        response.ResponseCode = 0;
-                    }
-
-                }
-                catch (Exception ex)
-                {
-                    response.Message = "SubmitFsscApplication Exception: " + ex.Message;
-                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
-                    response.Success = false;
-                }
-            }
-            else
-            {
-                response.Message = "Invalid token.";
-                response.HttpStatusCode = HttpStatusCode.Unauthorized;
-                response.Success = false;
-            }
-
-            return response;
-
-
-            try
-            {
-                var userId = _acc.HttpContext?.Session.GetString("UserId");
-                var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.Id);
-
-                
-
-                response.Message = "IMDR application saved successfully.";
-                response.Success = true;
-                response.HttpStatusCode = HttpStatusCode.OK;
-            }
-            catch (Exception ex)
-            {
-                response.Message = $"Error saving application: {ex.Message}";
-                response.Success = false;
-                response.HttpStatusCode = HttpStatusCode.InternalServerError;
-            }
-
-            return response;
-        }
-
-
-        public async Task<addReviewerApplicationResponse> SaveICMED_Plus_Application(addICMEDApplicationRequest request)
-        {
-            var response = new addReviewerApplicationResponse();
-            var UserId = _acc.HttpContext?.Session.GetString("UserId");
-            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
-            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
-            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
-
-            if (userType?.Trim().ToLower() == "reviewer")
-            {
-                try
-                {
-                    var now = DateTime.Now;
-                    bool? isFinalSubmit = null;
-                    DateTime? submitDate = null;
-                    string status = "687a2925694d00158c9bf265";
-                    string Adminstatus = "687a2925694d00158c9bf265";
-
-                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
-                    {
-                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
-
-                        if (isFinalSubmit == true)
-                        {
-                            submitDate = now;
-                            status = "687a2925694d00158c9bf267"; // Final submit
-                            if (request.ActiveReviwer == "ReviwerOne")
-                            {
-                                Adminstatus = "68930d9066a57e1b128af2e9"; // Final Submit status for ReviwerOne
-                            }
-                            else if (request.ActiveReviwer == "ReviwerTwo")
-                            {
-                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Final Submit status for ReviwerTwo
-                            }
-                        }
-                    }
-
-                    if (!string.IsNullOrEmpty(request.Id))
-                    {
                         var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.Id);
 
-                        // Clear sub-lists
+                        // clear sub-lists
                         var clearSubLists = Builders<tbl_ICMED_Application>.Update
-                            .Set(x => x.Technical_Areas, new List<TechnicalAreasList>())
-                            .Set(x => x.Accreditations, new List<AccreditationsList>())
                             .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
                             .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
                             .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
@@ -1972,15 +1919,14 @@ namespace ZenithApp.ZenithRepository
 
                         await _icmed.UpdateOneAsync(filter, clearSubLists);
 
-                        // Update main fields
+                        // main update
                         var update = Builders<tbl_ICMED_Application>.Update
-                            .Set(x => x.ApplicationId, request.ApplicationId)
                             .Set(x => x.Application_Received_date, request.Application_Received_date)
                             .Set(x => x.ApplicationReviewDate, request.ApplicationReviewDate)
                             .Set(x => x.Orgnization_Name, request.Orgnization_Name)
-                            .Set(x => x.Certification_Name, request.Certification_Name)
                             .Set(x => x.Fk_Certificate, request.Fk_Certificate)
-                            .Set(x => x.AssignTo, request.AssignTo ?? UserId)
+                            .Set(x => x.Certification_Name, request.Certification_Name)
+                            .Set(x => x.AssignTo, request.AssignTo)
                             .Set(x => x.Audit_Type, request.Audit_Type)
                             .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
                             .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
@@ -1996,25 +1942,28 @@ namespace ZenithApp.ZenithRepository
                             .Set(x => x.IsDelete, false)
                             .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
                             .Set(x => x.Fk_UserId, request.Fk_UserId ?? UserId)
-                            .Set(x => x.UpdatedAt, now)
-                            .Set(x => x.UpdatedBy, UserId)
                             .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
                             .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
                             .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
                             .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
                             .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
                             .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
-                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>());
+                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>())
+                            .Set(x => x.UpdatedAt, now)
+                            .Set(x => x.UpdatedBy, UserId);
 
                         await _icmed.UpdateOneAsync(filter, update);
+
+                        // update customer certificate status also (if same logic applies)
                         var application = await _customercertificates.Find(x => x.Id == request.ApplicationId).FirstOrDefaultAsync();
                         if (application != null)
                         {
                             var updatestatus = Builders<tbl_customer_certificates>.Update.Set(x => x.status, Adminstatus);
                             await _customercertificates.UpdateOneAsync(x => x.Id == request.ApplicationId, updatestatus);
                         }
+
                         response.Message = "ICMED Application saved successfully.";
-                        response.HttpStatusCode = HttpStatusCode.OK;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                         response.Success = true;
                         response.ResponseCode = 0;
                     }
@@ -2037,28 +1986,469 @@ namespace ZenithApp.ZenithRepository
         }
 
 
+
+
+        public async Task<addReviewerApplicationResponse> SaveIMDRApplication(addIMDRApplicationRequest request)
+        {
+            var response = new addReviewerApplicationResponse();
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
+            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+            var usertyper = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Type;
+
+            if (userType?.Trim().ToLower() == "reviewer")
+            {
+                try
+                {
+                    var now = DateTime.Now;
+
+                    bool? isFinalSubmit = null;
+                    DateTime? submitDate = null;
+                    string status = "687a2925694d00158c9bf265";//InProgress
+                    string Adminstatus = "687a2925694d00158c9bf265";//InProgress
+
+                    // If user provided isFinalSubmit flag
+                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
+                    {
+                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
+
+                        if (isFinalSubmit == true)
+                        {
+                            submitDate = DateTime.Now;
+                            status = "687a2925694d00158c9bf267"; //SendToApproval
+
+
+
+                            if (usertyper == "Trainee")
+                            {
+                                status = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+
+                                await _imdr.UpdateOneAsync(
+                                    x => x.ApplicationId == request.ApplicationId
+                                      && x.Fk_Certificate == request.Fk_Certificate
+                                      && x.AssignTo != "686fc25880b29ec6e7867768"
+                                      && x.AssignTo != UserId,
+                                    Builders<tbl_IMDR_Application>.Update
+                                        .Set(x => x.Status, "68930d9066a57e1b128af2e9")
+                                        .Set(x => x.UpdatedAt, DateTime.Now) // optional
+                                );
+
+                            }
+                            else if (request.ActiveReviwer == "Reviewer")
+                            {
+                                status = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                            //this for admin status
+                            if (request.ActiveReviwer == "ReviwerOne")
+                            {
+                                Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+                            }
+                            else if (request.ActiveReviwer == "ReviwerTwo")
+                            {
+                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                        }
+
+
+                    }
+
+                    if (!string.IsNullOrEmpty(request.Id))
+                    {
+                        // --- UPDATE ---
+                        var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Id, request.Id);
+
+                        // clear old lists
+                        var clearSubLists = Builders<tbl_IMDR_Application>.Update
+                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
+                            .Set(x => x.KeyPersonnels, new List<KeyPersonnelList>())
+                            .Set(x => x.imdrManDays, new List<ImdrManDays>())
+                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>())
+                            .Set(x => x.mdrauditLists, new List<MDRAuditList>());
+
+                        await _imdr.UpdateOneAsync(filter, clearSubLists);
+
+                        // update new values
+                        var update = Builders<tbl_IMDR_Application>.Update
+                            .Set(x => x.ApplicationId, request.ApplicationId)
+                            .Set(x => x.Application_Received_date, request.Application_Received_date)
+                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
+                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
+                            .Set(x => x.AssignTo, request.AssignTo)
+                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
+                            .Set(x => x.DeviceMasterfile, request.DeviceMasterfile)
+                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
+                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
+                            .Set(x => x.Audit_Lang, request.Audit_Lang)
+                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
+                            .Set(x => x.IsInterpreter, request.IsInterpreter)
+                            .Set(x => x.Status, status)
+                            .Set(x => x.ActiveReviwer, request.ActiveReviwer)
+                            .Set(x => x.IsDelete, false)
+                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
+                            .Set(x => x.Fk_UserId, request.Fk_UserId ?? UserId)
+                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
+                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
+                            .Set(x => x.KeyPersonnels, request.KeyPersonnels ?? new List<KeyPersonnelList>())
+                            .Set(x => x.imdrManDays, request.imdrManDays ?? new List<ImdrManDays>())
+                            .Set(x => x.reviewerKeyPersonnel, request.reviewerKeyPersonnel ?? new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.ReviewerThreatList, request.ReviewerThreatList ?? new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, request.ReviewerRemarkList ?? new List<ReviewerRemarkList>())
+                            .Set(x => x.mdrauditLists, request.mdrauditLists ?? new List<MDRAuditList>())
+                            .Set(x => x.UpdatedAt, now)
+                            .Set(x => x.UpdatedBy, UserId);
+
+                        await _imdr.UpdateOneAsync(filter, update);
+
+                        response.Message = "IMDR Application updated successfully.";
+                        response.Success = true;
+                        response.HttpStatusCode = HttpStatusCode.OK;
+                    }
+                    else
+                    {
+                        // --- INSERT ---
+                        var newApp = new tbl_IMDR_Application
+                        {
+                            ApplicationId = request.ApplicationId,
+                            Application_Received_date = request.Application_Received_date,
+                            Orgnization_Name = request.Orgnization_Name,
+                            Fk_Certificate = request.Fk_Certificate,
+                            AssignTo = request.AssignTo,
+                            Scop_of_Certification = request.Scop_of_Certification,
+                            DeviceMasterfile = request.DeviceMasterfile,
+                            Availbility_of_TechnicalAreas = request.Availbility_of_TechnicalAreas,
+                            Availbility_of_Auditor = request.Availbility_of_Auditor,
+                            Audit_Lang = request.Audit_Lang,
+                            ActiveState = request.ActiveState ?? 1,
+                            IsInterpreter = request.IsInterpreter,
+                            Status = status,
+                            ActiveReviwer = request.ActiveReviwer,
+                            IsDelete = false,
+                            IsFinalSubmit = isFinalSubmit ?? false,
+                            Fk_UserId = request.Fk_UserId ?? UserId,
+                            Technical_Areas = request.Technical_Areas ?? new List<TechnicalAreasList>(),
+                            CustomerSites = request.CustomerSites ?? new List<ReviewerSiteDetails>(),
+                            KeyPersonnels = request.KeyPersonnels ?? new List<KeyPersonnelList>(),
+                            imdrManDays = request.imdrManDays ?? new List<ImdrManDays>(),
+                            reviewerKeyPersonnel = request.reviewerKeyPersonnel ?? new List<ReviewerKeyPersonnelList>(),
+                            ReviewerThreatList = request.ReviewerThreatList ?? new List<ReviewerThreatList>(),
+                            ReviewerRemarkList = request.ReviewerRemarkList ?? new List<ReviewerRemarkList>(),
+                            mdrauditLists = request.mdrauditLists ?? new List<MDRAuditList>(),
+                            CreatedAt = now,
+                            CreatedBy = UserId
+                        };
+
+                        await _imdr.InsertOneAsync(newApp);
+
+                        response.Message = "IMDR Application inserted successfully.";
+                        response.Success = true;
+                        response.HttpStatusCode = HttpStatusCode.OK;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Message = "SaveIMDRApplication Exception: " + ex.Message;
+                    response.Success = false;
+                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                }
+            }
+            else
+            {
+                response.Message = "Invalid token.";
+                response.Success = false;
+                response.HttpStatusCode = HttpStatusCode.Unauthorized;
+            }
+
+            return response;
+        }
+
+
+
+        public async Task<addReviewerApplicationResponse> SaveICMED_Plus_Application(addICMEDApplicationRequest request)
+        {
+            var response = new addReviewerApplicationResponse();
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
+            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+            var usertyper = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Type;
+
+            if (userType?.Trim().ToLower() == "reviewer")
+            {
+                try
+                {
+                    var now = DateTime.Now;
+
+                    bool? isFinalSubmit = null;
+                    DateTime? submitDate = null;
+                    string status = "687a2925694d00158c9bf265";//InProgress
+                    string Adminstatus = "687a2925694d00158c9bf265";//InProgress
+
+                    // If user provided isFinalSubmit flag
+                    if (!string.IsNullOrWhiteSpace(request.IsFinalSubmit))
+                    {
+                        isFinalSubmit = request.IsFinalSubmit.Trim().ToLower() == "true";
+
+                        if (isFinalSubmit == true)
+                        {
+                            submitDate = DateTime.Now;
+                            status = "687a2925694d00158c9bf267"; //SendToApproval
+
+
+
+                            if (usertyper == "Trainee")
+                            {
+                                status = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+
+                                await _icmed.UpdateOneAsync(
+                                    x => x.ApplicationId == request.ApplicationId
+                                      && x.Fk_Certificate == request.Fk_Certificate
+                                      && x.AssignTo != "686fc25880b29ec6e7867768"
+                                      && x.AssignTo != UserId,
+                                    Builders<tbl_ICMED_Application>.Update
+                                        .Set(x => x.Status, "68930d9066a57e1b128af2e9")
+                                        .Set(x => x.UpdatedAt, DateTime.Now) // optional
+                                );
+
+                            }
+                            else if (request.ActiveReviwer == "Reviewer")
+                            {
+                                status = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                            //this for admin status
+                            if (request.ActiveReviwer == "ReviwerOne")
+                            {
+                                Adminstatus = "68930d9066a57e1b128af2e9"; //  Reviewer One Submit
+                            }
+                            else if (request.ActiveReviwer == "ReviwerTwo")
+                            {
+                                Adminstatus = "6895d649f3fbe9ce595243cc"; // Reviewer Two Submit
+                            }
+                        }
+
+
+                    }
+
+                    if (!string.IsNullOrEmpty(request.ApplicationId))
+                    {
+                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Id, request.Id);
+
+                        // clear sub-lists
+                        var clearSubLists = Builders<tbl_ICMED_Application>.Update
+                            .Set(x => x.CustomerSites, new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, new List<ReviewerRemarkList>());
+
+                        await _icmed.UpdateOneAsync(filter, clearSubLists);
+
+                        // main update
+                        var update = Builders<tbl_ICMED_Application>.Update
+                            .Set(x => x.Application_Received_date, request.Application_Received_date)
+                            .Set(x => x.ApplicationReviewDate, request.ApplicationReviewDate)
+                            .Set(x => x.Orgnization_Name, request.Orgnization_Name)
+                            .Set(x => x.Fk_Certificate, request.Fk_Certificate)
+                            .Set(x => x.Certification_Name, request.Certification_Name)
+                            .Set(x => x.AssignTo, request.AssignTo)
+                            .Set(x => x.Audit_Type, request.Audit_Type)
+                            .Set(x => x.Scop_of_Certification, request.Scop_of_Certification)
+                            .Set(x => x.Availbility_of_TechnicalAreas, request.Availbility_of_TechnicalAreas)
+                            .Set(x => x.Availbility_of_Auditor, request.Availbility_of_Auditor)
+                            .Set(x => x.Audit_Lang, request.Audit_Lang)
+                            .Set(x => x.ActiveState, request.ActiveState ?? 1)
+                            .Set(x => x.IsInterpreter, request.IsInterpreter)
+                            .Set(x => x.IsMultisitesampling, request.IsMultisitesampling)
+                            .Set(x => x.Total_site, request.Total_site)
+                            .Set(x => x.Sample_Site, request.Sample_Site ?? new List<LabelValue>())
+                            .Set(x => x.Shift_Details, request.Shift_Details ?? new List<LabelValue>())
+                            .Set(x => x.Status, status)
+                            .Set(x => x.IsDelete, false)
+                            .Set(x => x.IsFinalSubmit, isFinalSubmit ?? false)
+                            .Set(x => x.Fk_UserId, request.Fk_UserId ?? UserId)
+                            .Set(x => x.Technical_Areas, request.Technical_Areas ?? new List<TechnicalAreasList>())
+                            .Set(x => x.Accreditations, request.Accreditations ?? new List<AccreditationsList>())
+                            .Set(x => x.CustomerSites, request.CustomerSites ?? new List<ReviewerSiteDetails>())
+                            .Set(x => x.reviewerKeyPersonnel, request.KeyPersonnels ?? new List<ReviewerKeyPersonnelList>())
+                            .Set(x => x.MandaysLists, request.MandaysLists ?? new List<ReviewerAuditMandaysList>())
+                            .Set(x => x.ReviewerThreatList, request.ThreatLists ?? new List<ReviewerThreatList>())
+                            .Set(x => x.ReviewerRemarkList, request.RemarkLists ?? new List<ReviewerRemarkList>())
+                            .Set(x => x.UpdatedAt, now)
+                            .Set(x => x.UpdatedBy, UserId);
+
+                        await _icmed.UpdateOneAsync(filter, update);
+
+                        // update customer certificate status also (if same logic applies)
+                        var application = await _customercertificates.Find(x => x.Id == request.ApplicationId).FirstOrDefaultAsync();
+                        if (application != null)
+                        {
+                            var updatestatus = Builders<tbl_customer_certificates>.Update.Set(x => x.status, Adminstatus);
+                            await _customercertificates.UpdateOneAsync(x => x.Id == request.ApplicationId, updatestatus);
+                        }
+
+                        response.Message = "ICMED Application saved successfully.";
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.Message = "SaveICMEDApplication Exception: " + ex.Message;
+                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                    response.Success = false;
+                }
+            }
+            else
+            {
+                response.Message = "Invalid token.";
+                response.HttpStatusCode = HttpStatusCode.Unauthorized;
+                response.Success = false;
+            }
+
+            return response;
+        }
+
+
+        //public async Task<BaseResponse> AddFieldComment(FieldCommentRequest request)
+        //{
+        //    var response = new addReviewerApplicationResponse();
+        //    var UserId = _acc.HttpContext?.Session.GetString("UserId");
+
+        //    // Basic validation
+        //    if (string.IsNullOrWhiteSpace(request.ApplicationId) ||
+        //        string.IsNullOrWhiteSpace(request.FieldName) ||
+        //        string.IsNullOrWhiteSpace(UserId) ||
+        //        string.IsNullOrWhiteSpace(request.CommentText))
+        //    {
+        //        response.Message = "ApplicationId, FieldName, Reviewer, and CommentText are required.";
+        //        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+        //        response.Success = false;
+        //        response.ResponseCode = 1;
+        //        return response;
+        //    }
+
+        //    // Fetch application
+        //    var application = await _iso
+        //        .Find(x => x.ApplicationId == request.ApplicationId)
+        //        .FirstOrDefaultAsync();
+
+        //    if (application == null)
+        //    {
+        //        response.Message = "Application not found.";
+        //        response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+        //        response.Success = false;
+        //        response.ResponseCode = 1;
+        //        return response;
+        //    }
+
+        //    // Fetch certificate
+        //    var certificate = await _masterCertificate
+        //        .Find(x => x.Id == application.Fk_Certificate)
+        //        .FirstOrDefaultAsync();
+
+        //    if (certificate == null)
+        //    {
+        //        response.Message = "Certificate not found.";
+        //        response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+        //        response.Success = false;
+        //        response.ResponseCode = 1;
+        //        return response;
+        //    }
+
+        //    // Fetch reviewer info
+        //    var reviewerUser = await _user
+        //        .Find(x => x.Id == UserId)
+        //        .FirstOrDefaultAsync();
+
+        //    if (reviewerUser == null)
+        //    {
+        //        response.Message = "Reviewer user not found.";
+        //        response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+        //        response.Success = false;
+        //        response.ResponseCode = 1;
+        //        return response;
+        //    }
+
+        //    // Create comment object
+        //    var comment = new tbl_ApplicationFieldComment
+        //    {
+        //        CertificationName = certificate.Id,
+        //        ApplicationId = request.ApplicationId,
+        //        Fk_User = UserId,
+        //        FieldName = request.FieldName,
+        //        FieldUserType = reviewerUser.Type,
+        //        CommentText = request.CommentText,
+        //        CreatedBy = UserId,
+        //        CreatedOn = DateTime.Now
+        //    };
+
+        //    await _comments.InsertOneAsync(comment);
+
+        //    // Success response
+        //    response.Message = "Comment added successfully.";
+        //    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+        //    response.Success = true;
+        //    response.ResponseCode = 0;
+
+        //    return response;
+        //}
+
+
+
+        //new code for dynamic add comment 
+
         public async Task<BaseResponse> AddFieldComment(FieldCommentRequest request)
         {
             var response = new addReviewerApplicationResponse();
             var UserId = _acc.HttpContext?.Session.GetString("UserId");
 
-            // Basic validation
+            // ✅ Basic validation
             if (string.IsNullOrWhiteSpace(request.ApplicationId) ||
                 string.IsNullOrWhiteSpace(request.FieldName) ||
                 string.IsNullOrWhiteSpace(UserId) ||
-                string.IsNullOrWhiteSpace(request.CommentText))
+                string.IsNullOrWhiteSpace(request.CommentText) ||
+                string.IsNullOrWhiteSpace(request.Type))
             {
-                response.Message = "ApplicationId, FieldName, Reviewer, and CommentText are required.";
+                response.Message = "ApplicationId, FieldName, Reviewer, CertificationName, and CommentText are required.";
                 response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
                 response.Success = false;
                 response.ResponseCode = 1;
                 return response;
             }
 
-            // Fetch application
-            var application = await _iso
-                .Find(x => x.ApplicationId == request.ApplicationId)
-                .FirstOrDefaultAsync();
+            // ✅ Fetch application dynamically based on CertificationName
+            object? application = null;
+
+            switch (request.Type.ToUpper())
+            {
+                case "ISO":
+                    application = await _iso.Find(x => x.ApplicationId == request.ApplicationId).FirstOrDefaultAsync();
+                    break;
+
+                case "FSSC":
+                    application = await _fssc.Find(x => x.ApplicationId == request.ApplicationId).FirstOrDefaultAsync();
+                    break;
+
+                case "ICMED":
+                    application = await _icmed.Find(x => x.ApplicationId == request.ApplicationId).FirstOrDefaultAsync();
+                    break;
+
+                case "IMDR":
+                    application = await _imdr.Find(x => x.ApplicationId == request.ApplicationId).FirstOrDefaultAsync();
+                    break;
+
+                case "ICMED_PLUS":
+                    application = await _icmedplus.Find(x => x.ApplicationId == request.ApplicationId).FirstOrDefaultAsync();
+                    break;
+
+                default:
+                    response.Message = $"Unsupported CertificationName: {request.Type}";
+                    response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                    response.Success = false;
+                    response.ResponseCode = 1;
+                    return response;
+            }
 
             if (application == null)
             {
@@ -2069,11 +2459,21 @@ namespace ZenithApp.ZenithRepository
                 return response;
             }
 
-            // Fetch certificate
-            var certificate = await _masterCertificate
-                .Find(x => x.Id == application.Fk_Certificate)
-                .FirstOrDefaultAsync();
+            // ✅ Get Fk_Certificate dynamically using reflection
+            var fkCertificateProp = application.GetType().GetProperty("Fk_Certificate");
+            var fkCertificateId = fkCertificateProp?.GetValue(application)?.ToString();
 
+            if (string.IsNullOrWhiteSpace(fkCertificateId))
+            {
+                response.Message = "Certificate not found in application.";
+                response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                response.Success = false;
+                response.ResponseCode = 1;
+                return response;
+            }
+
+            // ✅ Fetch certificate
+            var certificate = await _masterCertificate.Find(x => x.Id == fkCertificateId).FirstOrDefaultAsync();
             if (certificate == null)
             {
                 response.Message = "Certificate not found.";
@@ -2083,11 +2483,8 @@ namespace ZenithApp.ZenithRepository
                 return response;
             }
 
-            // Fetch reviewer info
-            var reviewerUser = await _user
-                .Find(x => x.Id == UserId)
-                .FirstOrDefaultAsync();
-
+            // ✅ Fetch reviewer info
+            var reviewerUser = await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync();
             if (reviewerUser == null)
             {
                 response.Message = "Reviewer user not found.";
@@ -2097,10 +2494,10 @@ namespace ZenithApp.ZenithRepository
                 return response;
             }
 
-            // Create comment object
+            // ✅ Create comment object
             var comment = new tbl_ApplicationFieldComment
             {
-                CertificationName = certificate.Id,
+                CertificationName = certificate.Id, // now stores "ISO", "FSSC", etc.
                 ApplicationId = request.ApplicationId,
                 Fk_User = UserId,
                 FieldName = request.FieldName,
@@ -2112,7 +2509,7 @@ namespace ZenithApp.ZenithRepository
 
             await _comments.InsertOneAsync(comment);
 
-            // Success response
+            // ✅ Success response
             response.Message = "Comment added successfully.";
             response.HttpStatusCode = System.Net.HttpStatusCode.OK;
             response.Success = true;

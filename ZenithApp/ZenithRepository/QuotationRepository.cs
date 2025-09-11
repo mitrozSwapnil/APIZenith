@@ -252,16 +252,16 @@ namespace ZenithApp.ZenithRepository
                         await _quoatation.UpdateOneAsync(duplicateFilter, update);
                         if (certificate.Certificate_Name == "ISO" && request.isSubmit==true)
                         {
-                            var filter = Builders<tbl_ISO_Application>.Filter.And(
-            Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId),
-            Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, request.CertificateType)
-        );
+                            var filter = Builders<tbl_customer_certificates>.Filter.And(
+                                Builders<tbl_customer_certificates>.Filter.Eq(x => x.Id, request.ApplicationId),
+                                Builders<tbl_customer_certificates>.Filter.Eq(x => x.Fk_Certificates, request.CertificateType)
+                            );
 
-                            var isoupdate = Builders<tbl_ISO_Application>.Update
-                                .Set(x => x.Status, "68b53c93f053e6e4926d211b");
+                            var isoupdate = Builders<tbl_customer_certificates>.Update
+                                .Set(x => x.status, "68b53c93f053e6e4926d211b");
 
 
-                            await _isoApplication.UpdateOneAsync(filter, isoupdate);
+                            await _customercertificates.UpdateOneAsync(filter, isoupdate);
                         }
 
 

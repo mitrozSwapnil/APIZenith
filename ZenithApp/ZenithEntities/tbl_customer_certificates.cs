@@ -21,11 +21,15 @@ namespace ZenithApp.ZenithEntities
         public bool? Is_Delete{ get; set; }
         [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
         public DateTime CreatedAt { get; set; }
+
+        [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
+        public DateTime TargetDate { get; set; }
         [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
        
         public DateTime UpdatedAt { get; set; }
 
         public string CreatedBy { get; set; }
+        public string? File { get; set; }
         public string UpdatedBy { get; set; }
 
         [BsonRepresentation(BsonType.ObjectId)]

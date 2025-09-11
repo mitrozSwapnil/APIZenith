@@ -13,6 +13,7 @@ namespace ZenithApp.ZenithEntities
         public string? ApplicationName { get; set; }
         public string? CertiFicateName { get; set; }
         public DateTime? Application_Received_date { get; set; }
+        public DateTime? TargetDate { get; set; }
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
 

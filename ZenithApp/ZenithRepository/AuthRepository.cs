@@ -118,7 +118,7 @@ namespace gmkRepositories
 
                 var role = _roles.Find(x => x.Id == user.Fk_RoleID).FirstOrDefault(); 
                 var userRole = role.roleName;
-                var token = GenerateJwtToken(user.Id, user.ContactNo, userRole);
+                var token = GenerateJwtToken(user.Id, user.ContactNo, userRole, user.Type);
 
                 _acc.HttpContext.Session.Set("Login_ID", Encoding.UTF8.GetBytes(user.Id));
 
@@ -288,7 +288,7 @@ namespace gmkRepositories
 
 
             var role = "customer"; // Assuming Reviewer role is static for this example
-            var token = GenerateJwtToken(user.Id, user.ContactNo, role);
+            var token = GenerateJwtToken(user.Id, user.ContactNo, role,user.Type);
 
             _acc.HttpContext.Session.Set("Login_ID", Encoding.UTF8.GetBytes(user.Id));
 
@@ -310,7 +310,7 @@ namespace gmkRepositories
                 }
             };
         }
-        private string GenerateJwtToken(string userId, string mobileNumber, string role)
+        private string GenerateJwtToken(string userId, string mobileNumber, string role,string type)
         {
             var jwtSettings = _configuration.GetSection("Jwt");
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]));

@@ -17,6 +17,7 @@ namespace ZenithApp.ZenithMessage
         public String userId { get; set; }
         public string? fullName { get; set; }
         public string? Role { get; set; }
+        public string? UserType { get; set; }
         public string? email { get; set; }
         public string? mobileNo { get; set; }
         public List<string>? Department { get; set; }

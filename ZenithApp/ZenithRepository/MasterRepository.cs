@@ -16,6 +16,7 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_master_designation> _masterdesignation;
         private readonly IMongoCollection<tbl_master_Audit> _masterAudit;
         private readonly IMongoCollection<tbl_master_technicalArea> _technicalarea;
+        private readonly IMongoCollection<tbl_Master_Category> _mastrcategory;
 
         private readonly IHttpContextAccessor _acc;
 
@@ -30,6 +31,7 @@ namespace ZenithApp.ZenithRepository
             _masterdesignation = database.GetCollection<tbl_master_designation>("tbl_master_designation");
             _masterAudit = database.GetCollection<tbl_master_Audit>("tbl_master_audit");
             _technicalarea = database.GetCollection<tbl_master_technicalArea>("tbl_master_technicalArea");
+            _mastrcategory = database.GetCollection<tbl_Master_Category>("tbl_Master_Category");
             _acc = acc;
         }
 
@@ -44,7 +46,9 @@ namespace ZenithApp.ZenithRepository
          _productcertificate.InsertOne(productCertificate);
 
         public List<tbl_Master_Remark> GetAllMasterRemarks() =>
-    _masterremark.Find(x => true).ToList();
+             _masterremark.Find(x => true).ToList();
+        public List<tbl_Master_Category> GetAllMasterCategory() =>
+             _mastrcategory.Find(x => true).ToList();
 
         public List<tbl_Master_Threat> GetAllMasterThreats() =>
             _masterthreat.Find(x => true).ToList();
@@ -54,6 +58,8 @@ namespace ZenithApp.ZenithRepository
 
         public void CreateMasterRemark(tbl_Master_Remark masterRemark) =>
           _masterremark.InsertOne(masterRemark);
+         public void CreateMasterCategory(tbl_Master_Category mastercategory) =>
+          _mastrcategory.InsertOne(mastercategory);
 
         public void CreateMasterThreat(tbl_Master_Threat masterThreat) =>
             _masterthreat.InsertOne(masterThreat);

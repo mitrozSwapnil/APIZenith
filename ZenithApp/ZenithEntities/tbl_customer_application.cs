@@ -18,9 +18,7 @@ namespace ZenithApp.ZenithEntities
 
         public string? EmailId { get; set; }
         public string? status { get; set; }
-
-        [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
-        public DateTime? Expected_Audit_Date { get; set; }
+        public string? Expected_Audit_Date { get; set; }
 
         public string? Holiday { get; set; }
         public int? Fk_ApplicationStatus { get; set; }

@@ -139,8 +139,18 @@ namespace ZenithApp.Controllers
             _repository.CreateMasterThreat(masterThreat);
             return CreatedAtAction(nameof(GetMasterThreats), masterThreat);
         }
-
-
+        [HttpGet("master-getcategory")]
+        public ActionResult<IEnumerable<tbl_Master_Remark>> GetCategory()
+        {
+            var remarks = _repository.GetAllMasterCategory();
+            return Ok(remarks);
+        }
+        [HttpPost("master-addcategory")]
+        public ActionResult<tbl_Master_Category> CreateMastercategory(tbl_Master_Category mastercategory)
+        {
+            _repository.CreateMasterCategory(mastercategory);
+            return CreatedAtAction(nameof(GetCategory), mastercategory);
+        }
 
     }
 }

@@ -9,7 +9,7 @@ namespace ZenithApp.ZenithMessage
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
         public string? EmailId { get; set; }
-        public DateTime? Expected_Audit_Date { get; set; }
+        public string? Expected_Audit_Date { get; set; }
         public string? Holiday { get; set; }
         public string? Audit_Language { get; set; }
         public string? ConsultantName { get; set; }
@@ -31,5 +31,6 @@ namespace ZenithApp.ZenithMessage
     {
         public string Id { get; set; }
         public string Name { get; set; }
+        public string? File { get; set; }
     }
 }

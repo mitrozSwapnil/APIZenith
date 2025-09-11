@@ -10,7 +10,9 @@ namespace ZenithApp.ZenithEntities
         [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; }
         public string? ApplicationId { get; set; }
+        public string? ApplicationName { get; set; }
         public DateTime? Application_Received_date { get; set; }
+        public DateTime? TargetDate { get; set; }
         public string? Orgnization_Name { get; set; }
         public string? Constituation_of_Orgnization { get; set; }
 

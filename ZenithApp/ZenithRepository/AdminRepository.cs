@@ -8,6 +8,7 @@ using ZenithApp.CommonServices;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
+using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ZenithApp.ZenithRepository
@@ -38,6 +39,8 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_ApplicationReview> _reviews;
         private readonly IMongoCollection<tbl_ApplicationFieldHistory> _history;
         private readonly IMongoCollection<tbl_ApplicationFieldComment> _comments;
+        private readonly IMongoCollection<tbl_quoatation> _quoatation;
+
 
 
 
@@ -70,7 +73,7 @@ namespace ZenithApp.ZenithRepository
             _reviews = database.GetCollection<tbl_ApplicationReview>("tbl_ApplicationReview");
             _history = database.GetCollection<tbl_ApplicationFieldHistory>("tbl_ApplicationFieldHistory");
             _comments = database.GetCollection<tbl_ApplicationFieldComment>("tbl_ApplicationFieldComment");
-
+            _quoatation = database.GetCollection<tbl_quoatation>("tbl_quoatation");
 
 
         }
@@ -155,6 +158,13 @@ namespace ZenithApp.ZenithRepository
                                 .FirstOrDefaultAsync();
 
 
+                            var statusDoc = await _status
+                               .Find(x => x.Id == cert.status)
+                               .FirstOrDefaultAsync();
+
+                            string nameStatus = statusDoc?.StatusName; // null if not found
+
+
 
 
                             if (masterCert != null)
@@ -166,9 +176,9 @@ namespace ZenithApp.ZenithRepository
 
 
                                 var isoFilter = Builders<tbl_ISO_Application>.Filter.And(
-    Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, cert.Id),
-    Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, masterCert.Id)
-);
+                                                Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, cert.Id),
+                                                Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, masterCert.Id)
+                                            );
 
                                 var isoApplication = await _iso.Find(isoFilter).FirstOrDefaultAsync();
 
@@ -183,9 +193,11 @@ namespace ZenithApp.ZenithRepository
                                     CompanyName = app.Orgnization_Name,
                                     Certification_Name = masterCert.Certificate_Name,
                                     Certification_Id = masterCert.Id,
-                                    Status = isoApplication != null
-        ? (await _status.Find(x => x.Id == isoApplication.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending"
-        : (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
+                                    TargetDate = cert.TargetDate,
+                                    //Status = isoApplication != null
+                                    //        ? (await _status.Find(x => x.Id == isoApplication.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending"
+                                    //        : (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
+                                    Status = nameStatus,
                                     AssignedUserName = assignedUser?.FullName,
                                 };
 
@@ -227,10 +239,37 @@ namespace ZenithApp.ZenithRepository
                         PageSize = request.PageSize,
                         TotalRecords = totalCount
                     };
+                   
+
+                    var applications1 = await _customer.Find(applicationFilter).ToListAsync();
+
+                    // Step 2: get all application Ids
+                    var appIds = applications.Select(a => a.Id).ToList();
+
+                    // Step 3: count certificates linked to those applications
+                    var certFilter = Builders<tbl_customer_certificates>.Filter.And(
+                        Builders<tbl_customer_certificates>.Filter.In(x => x.Fk_Customer_Application, appIds),
+                        Builders<tbl_customer_certificates>.Filter.Eq(x => x.Is_Delete, false)
+                    );
+
+                    var totalApplications = await _customercertificates.CountDocumentsAsync(certFilter);
+
+                    var totalQuotations = await _quoatation.CountDocumentsAsync(FilterDefinition<tbl_quoatation>.Empty);
+
+
+                    var pannelData = new PannelDto
+                    {
+                        totalApplication = (int)totalApplications,
+                        totalQuotation = (int)totalQuotations,
+                        totalAuditFile =0,
+                        other = 0
+                    };
+
 
                     // Step 7 — Final response
                     response.Data = paginatedList;
                     response.Pagination = pagination;
+                    response.Pannale = pannelData;
                     response.Message = "Dashboard Data fetched successfully.";
                     response.HttpStatusCode = System.Net.HttpStatusCode.OK;
                     response.Success = true;
@@ -277,6 +316,7 @@ namespace ZenithApp.ZenithRepository
                             application.AssignTo = request.ReviewerId;
                             application.UpdatedAt = DateTime.Now; // Update the timestamp
                             application.UpdatedBy = userId; // Set the user who updated
+                            application.TargetDate = request.targetDate; // Set the user who updated
                             var status = await _status.Find(x => x.StatusName == "InProgress" && x.IsDelete == false).FirstOrDefaultAsync();
                             if (status != null)
                             {
@@ -363,11 +403,12 @@ namespace ZenithApp.ZenithRepository
                                             ApplicationId = request.ApplicationId,
                                             ApplicationName=customerapp.ApplicationId,
                                             Application_Received_date = DateTime.Now,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviwerOne",
+                                            ActiveReviwer = request.ApplicationId ?? "ReviwerTwo",
                                             Orgnization_Name = customerapp.Orgnization_Name,
                                             Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
                                             Fk_Certificate = application.Fk_Certificates,
                                             AssignTo = request.ReviewerId,
+                                            TargetDate =request.targetDate,
                                             Audit_Type = "",  // Set based on logic or request
                                             Scop_of_Certification = "",
                                             Technical_Areas = new List<TechnicalAreasList>(),
@@ -417,7 +458,7 @@ namespace ZenithApp.ZenithRepository
                                                 IsInterpreter = false,
                                                 IsMultisitesampling = false,
                                                 Total_site = customerSiteDetailsList?.Count ?? 0,  // <-- Set site count
-
+                                                TargetDate=request.targetDate,
                                                 Sample_Site = new List<LabelValue>(),   // If required, fill here
                                                 Shift_Details = new List<LabelValue>(), // If required, fill here
 
@@ -435,181 +476,387 @@ namespace ZenithApp.ZenithRepository
                                             });
                                         }
 
-                                        break;
+                                     break;
 
                                     case "FSSC":
+
                                         await _fssc.InsertOneAsync(new tbl_FSSC_Application
                                         {
                                             ApplicationId = request.ApplicationId,
                                             Application_Received_date = DateTime.Now,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviwerOne",
+                                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
+                                            ApplicationName = customerapp.ApplicationId,
                                             Orgnization_Name = customerapp.Orgnization_Name,
                                             Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
+
                                             Fk_Certificate = application.Fk_Certificates,
-                                            AssignTo = request.TrineeId,
-                                            Audit_Type = "",  // Set based on logic or request
+                                            AssignTo = request.ReviewerId,
+
+                                            Audit_Type = "",   // Set based on logic
                                             Scop_of_Certification = "",
-                                            Technical_Areas = new List<TechnicalAreasList>(),
-                                            Accreditations = new List<AccreditationsList>(),
-                                            categoryLists = new List<CategoryList>(),
-                                            //subCategoryLists = new List<SubCategoryList>(),
+
                                             Availbility_of_TechnicalAreas = false,
                                             Availbility_of_Auditor = false,
                                             Audit_Lang = "",
+
                                             IsInterpreter = false,
                                             IsMultisitesampling = false,
-                                            Seasonality_Factor = "", // Set based on logic or request
-                                            AnyAllergens = "", // Set based on logic or request
-                                            Total_site = customerSiteDetailsList?.Count ?? 0,  // <-- Set site count
-                                            Sample_Site = new List<LabelValue>(),   // If required, fill here
-                                            Shift_Details = new List<LabelValue>(), // If required, fill here
-                                            CustomerSites = customerSiteDetailsList,
-                                            KeyPersonnels = keyPersonnelsList,
-                                            MandaysLists = mandaysList,
-                                            reviewerKeyPersonnel= reviewerkeyPersonnelsList,
+                                            Total_site = customerSiteDetailsList?.Count ?? 0,
+
+                                            Sample_Site = new List<LabelValue>(),
+                                            Shift_Details = new List<LabelValue>(),
+
+                                            Seasonality_Factor = null,
+                                            AnyAllergens = null,
+
+                                            CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
+                                            KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
+                                            MandaysLists = mandaysList ?? new List<ReviewerAuditMandaysList>(),
+                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
+
+                                            Technical_Areas = new List<TechnicalAreasList>(),
+                                            Accreditations = new List<AccreditationsList>(),
+                                            productCategoryAndSubs = new List<ProductCategoryAndSubCategoryList>(),
+                                            hACCPLists = new List<HACCPList>(),
+                                            standardsLists = new List<StandardsList>(),
+                                            categoryLists = new List<CategoryList>(),
+                                            subCategoryLists = new List<SubCategoryList>(),
+
+                                            ReviewerThreatList = new List<ReviewerThreatList>(),
+                                            ReviewerRemarkList = new List<ReviewerRemarkList>(),
+                                            TargetDate = request.targetDate,
                                             CreatedAt = DateTime.Now,
                                             CreatedBy = userId,
                                             Status = status.Id,
                                             IsDelete = false,
                                             IsFinalSubmit = false,
-                                            Fk_UserId = request.TrineeId
-
+                                            Fk_UserId = request.ReviewerId
                                         });
+                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                                        {
+                                            await _fssc.InsertOneAsync(new tbl_FSSC_Application
+                                            {
+                                                ApplicationId = request.ApplicationId,
+                                                Application_Received_date = DateTime.Now,
+                                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
+                                                ApplicationName = customerapp.ApplicationId,
+                                                Orgnization_Name = customerapp.Orgnization_Name,
+                                                Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
+
+                                                Fk_Certificate = application.Fk_Certificates,
+                                                AssignTo = request.TrineeId,
+                                                TargetDate =request.targetDate,
+                                                Audit_Type = "",   // Set based on logic
+                                                Scop_of_Certification = "",
+
+                                                Availbility_of_TechnicalAreas = false,
+                                                Availbility_of_Auditor = false,
+                                                Audit_Lang = "",
+
+                                                IsInterpreter = false,
+                                                IsMultisitesampling = false,
+                                                Total_site = customerSiteDetailsList?.Count ?? 0,
+
+                                                Sample_Site = new List<LabelValue>(),
+                                                Shift_Details = new List<LabelValue>(),
+
+                                                Seasonality_Factor = null,
+                                                AnyAllergens = null,
+
+                                                CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
+                                                KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
+                                                MandaysLists = mandaysList ?? new List<ReviewerAuditMandaysList>(),
+                                                reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
+
+                                                Technical_Areas = new List<TechnicalAreasList>(),
+                                                Accreditations = new List<AccreditationsList>(),
+                                                productCategoryAndSubs = new List<ProductCategoryAndSubCategoryList>(),
+                                                hACCPLists = new List<HACCPList>(),
+                                                standardsLists = new List<StandardsList>(),
+                                                categoryLists = new List<CategoryList>(),
+                                                subCategoryLists = new List<SubCategoryList>(),
+
+                                                ReviewerThreatList = new List<ReviewerThreatList>(),
+                                                ReviewerRemarkList = new List<ReviewerRemarkList>(),
+
+                                                CreatedAt = DateTime.Now,
+                                                CreatedBy = userId,
+
+                                                Status = status.Id,
+                                                IsDelete = false,
+                                                IsFinalSubmit = false,
+                                                Fk_UserId = request.TrineeId
+                                            });
+                                        }
+
                                     break;
+
 
                                     case "ICMED":
-                                        await _icmed.InsertOneAsync(new tbl_ICMED_Application
+                                        var icmedApplication = new tbl_ICMED_Application
                                         {
                                             ApplicationId = request.ApplicationId,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviwerOne",
                                             Application_Received_date = DateTime.Now,
+                                            ApplicationName = customerapp.ApplicationId,
                                             Orgnization_Name = customerapp.Orgnization_Name,
-                                            Certification_Name = customerapp.Constituation_of_Orgnization,
                                             Fk_Certificate = application.Fk_Certificates,
-                                            Audit_Type = "",
-                                            Scop_of_Certification = "",
-                                            AssignTo = request.TrineeId,
-                                            
-                                            
+                                            Certification_Name = masterCert.Certificate_Name, // if you have it
+                                            Scop_of_Certification = "",  // set as per your logic or request
+                                            Audit_Type = "",             // set as per your logic
+                                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
                                             remark = "",
-
                                             Availbility_of_TechnicalAreas = false,
                                             Availbility_of_Auditor = false,
                                             Audit_Lang = "",
-                                            ActiveState = 1, // default as per model
-
+                                            ActiveState = 1,
                                             IsInterpreter = false,
                                             IsMultisitesampling = false,
                                             Total_site = customerSiteDetailsList?.Count ?? 0,
+                                            TargetDate = request.targetDate,
                                             Sample_Site = new List<LabelValue>(),
                                             Shift_Details = new List<LabelValue>(),
 
+                                            ApplicationReviewDate = null,
                                             CreatedAt = DateTime.Now,
                                             CreatedBy = userId,
-                                            UpdatedAt = null,
-                                            UpdatedBy = null,
-
                                             Status = status.Id,
                                             IsDelete = false,
                                             IsFinalSubmit = false,
-                                            Fk_UserId = request.TrineeId,
-
+                                            Fk_UserId = request.ReviewerId,
+                                            AssignTo = request.ReviewerId,
                                             Technical_Areas = new List<TechnicalAreasList>(),
                                             Accreditations = new List<AccreditationsList>(),
-
                                             CustomerSites = customerSiteDetailsList,
                                             KeyPersonnels = keyPersonnelsList,
-
-                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
                                             MandaysLists = mandaysList,
+                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
+                                            ThreatLists = new List<ThreatList>(),
                                             ReviewerThreatList = new List<ReviewerThreatList>(),
-                                            ReviewerRemarkList = new List<ReviewerRemarkList>(),
-                                            // If you plan to use RemarkLists in the future, uncomment the next line
-                                            // RemarkLists = new List<RemarkList>()
-                                        });
-                                    break;
+                                            ReviewerRemarkList = new List<ReviewerRemarkList>()
+                                        };
+
+                                        await _icmed.InsertOneAsync(icmedApplication);
+
+                                        // If trainee is also assigned, create one more entry
+                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                                        {
+                                            var traineeIcmdApplication = new tbl_ICMED_Application
+                                            {
+                                                ApplicationId = request.ApplicationId,
+                                                Application_Received_date = DateTime.Now,
+                                                ApplicationName = customerapp.ApplicationId,
+                                                Orgnization_Name = customerapp.Orgnization_Name,
+                                                Fk_Certificate = application.Fk_Certificates,
+                                                Certification_Name = masterCert.Certificate_Name,
+                                                Scop_of_Certification = "",
+                                                Audit_Type = "",
+                                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
+                                                remark = "",
+                                                Availbility_of_TechnicalAreas = false,
+                                                Availbility_of_Auditor = false,
+                                                Audit_Lang = "",
+                                                ActiveState = 1,
+                                                IsInterpreter = false,
+                                                IsMultisitesampling = false,
+                                                Total_site = customerSiteDetailsList?.Count ?? 0,
+                                                TargetDate = request.targetDate,
+                                                Sample_Site = new List<LabelValue>(),
+                                                Shift_Details = new List<LabelValue>(),
+
+                                                ApplicationReviewDate = null,
+                                                CreatedAt = DateTime.Now,
+                                                CreatedBy = userId,
+                                                Status = status.Id,
+                                                IsDelete = false,
+                                                IsFinalSubmit = false,
+                                                Fk_UserId = request.TrineeId,
+                                                AssignTo = request.TrineeId,
+                                                Technical_Areas = new List<TechnicalAreasList>(),
+                                                Accreditations = new List<AccreditationsList>(),
+                                                CustomerSites = customerSiteDetailsList,
+                                                KeyPersonnels = keyPersonnelsList,
+                                                MandaysLists = mandaysList,
+                                                reviewerKeyPersonnel = reviewerkeyPersonnelsList,
+                                                ThreatLists = new List<ThreatList>(),
+                                                ReviewerThreatList = new List<ReviewerThreatList>(),
+                                                ReviewerRemarkList = new List<ReviewerRemarkList>()
+                                            };
+
+                                            await _icmed.InsertOneAsync(traineeIcmdApplication);
+                                        }
+
+                                        break;
+
 
                                     case "ICMED_PLUS":
-                                        await _icmed.InsertOneAsync(new tbl_ICMED_Application
+
+                                        await _icmedplus.InsertOneAsync(new tbl_ICMED_PLUS_Application
                                         {
                                             ApplicationId = request.ApplicationId,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviwerOne",
                                             Application_Received_date = DateTime.Now,
+                                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
                                             Orgnization_Name = customerapp.Orgnization_Name,
-                                            Certification_Name = customerapp.Constituation_of_Orgnization,
                                             Fk_Certificate = application.Fk_Certificates,
-                                            Audit_Type = "",
+                                            Certification_Name = masterCert.Certificate_Name,
+                                            AssignTo = request.ReviewerId,
+                                            Fk_UserId = request.ReviewerId,
+                                            Audit_Type = "",  // fill if available
                                             Scop_of_Certification = "",
-                                            AssignTo = request.TrineeId,
-                                            remark = "",
-                                            Availbility_of_TechnicalAreas = false,
-                                            Availbility_of_Auditor = false,
-                                            Audit_Lang = "",
-                                            ActiveState = 1, // default as per model
-                                            ApplicationReviewDate= null,
-                                            IsInterpreter = false,
-                                            IsMultisitesampling = false,
-                                            Total_site = customerSiteDetailsList?.Count ?? 0,
-                                            Sample_Site = new List<LabelValue>(),
-                                            Shift_Details = new List<LabelValue>(),
-
-                                            CreatedAt = DateTime.Now,
-                                            CreatedBy = userId,
-                                            UpdatedAt = null,
-                                            UpdatedBy = null,
-
-                                            Status = status.Id,
-                                            IsDelete = false,
-                                            IsFinalSubmit = false,
-                                            Fk_UserId = request.TrineeId,
 
                                             Technical_Areas = new List<TechnicalAreasList>(),
                                             Accreditations = new List<AccreditationsList>(),
+                                            Availbility_of_TechnicalAreas = false,
+                                            Availbility_of_Auditor = false,
+                                            Audit_Lang = "",
+                                            IsInterpreter = false,
+                                            IsMultisitesampling = false,
+                                            Total_site = customerSiteDetailsList?.Count ?? 0,
+
+                                            Sample_Site = new List<LabelValue>(),
+                                            Shift_Details = new List<LabelValue>(),
 
                                             CustomerSites = customerSiteDetailsList,
                                             KeyPersonnels = keyPersonnelsList,
-
-                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
                                             MandaysLists = mandaysList,
+                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
+                                            ThreatLists = new List<ThreatList>(),
                                             ReviewerThreatList = new List<ReviewerThreatList>(),
                                             ReviewerRemarkList = new List<ReviewerRemarkList>(),
-                                            // If you plan to use RemarkLists in the future, uncomment the next line
-                                            // RemarkLists = new List<RemarkList>()
+
+                                            CreatedAt = DateTime.Now,
+                                            CreatedBy = userId,
+                                            Status = status.Id,
+                                            IsDelete = false,
+                                            IsFinalSubmit = false
                                         });
-                                    break;
+
+                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                                        {
+                                            await _icmedplus.InsertOneAsync(new tbl_ICMED_PLUS_Application
+                                            {
+                                                ApplicationId = request.ApplicationId,
+                                                Application_Received_date = DateTime.Now,
+                                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
+                                                Orgnization_Name = customerapp.Orgnization_Name,
+                                                Fk_Certificate = application.Fk_Certificates,
+                                                Certification_Name = masterCert.Certificate_Name,
+                                                AssignTo = request.TrineeId,
+                                                Fk_UserId = request.TrineeId,
+                                                Audit_Type = "",  // fill if available
+                                                Scop_of_Certification = "",
+                                                Technical_Areas = new List<TechnicalAreasList>(),
+                                                Accreditations = new List<AccreditationsList>(),
+                                                Availbility_of_TechnicalAreas = false,
+                                                Availbility_of_Auditor = false,
+                                                Audit_Lang = "",
+                                                IsInterpreter = false,
+                                                IsMultisitesampling = false,
+                                                Total_site = customerSiteDetailsList?.Count ?? 0,
+                                                Sample_Site = new List<LabelValue>(),
+                                                Shift_Details = new List<LabelValue>(),
+                                                CustomerSites = customerSiteDetailsList,
+                                                KeyPersonnels = keyPersonnelsList,
+                                                MandaysLists = mandaysList,
+                                                reviewerKeyPersonnel = reviewerkeyPersonnelsList,
+                                                ThreatLists = new List<ThreatList>(),
+                                                ReviewerThreatList = new List<ReviewerThreatList>(),
+                                                ReviewerRemarkList = new List<ReviewerRemarkList>(),
+                                                CreatedAt = DateTime.Now,
+                                                CreatedBy = userId,
+                                                Status = status.Id,
+                                                IsDelete = false,
+                                                IsFinalSubmit = false
+                                            });
+                                        }
+
+                                     break;
+
 
                                     case "IMDR":
+
+                                        // Insert Reviewer (main)
                                         await _imdr.InsertOneAsync(new tbl_IMDR_Application
                                         {
                                             ApplicationId = request.ApplicationId,
+                                            ApplicationName = customerapp.ApplicationId,
                                             Application_Received_date = DateTime.Now,
+                                            ActiveReviwer = request.ApplicationId ?? "ReviwerTwo",  // Default reviewer role
                                             Orgnization_Name = customerapp.Orgnization_Name,
                                             Fk_Certificate = application.Fk_Certificates,
-                                            Scop_of_Certification = "",
-                                            ActiveReviwer = request.ApplicationId ?? "ReviwerOne",
-                                            DeviceMasterfile ="",
-                                            KeyPersonnels = keyPersonnelsList,
-                                            CustomerSites = customerSiteDetailsList,
+                                            AssignTo = request.ReviewerId,
+                                            TargetDate = request.targetDate,
 
+                                            // IMDR-specific fields
+                                            Scop_of_Certification = "",
+                                            DeviceMasterfile = "",
                                             Technical_Areas = new List<TechnicalAreasList>(),
                                             Availbility_of_TechnicalAreas = false,
                                             Availbility_of_Auditor = false,
                                             Audit_Lang = "",
                                             IsInterpreter = false,
-                                            imdrManDays = new List<ImdrManDays>(),
-                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
-                                            mdrauditLists = new List<MDRAuditList>(),
-                                            ReviewerThreatList = new List<ReviewerThreatList>(),
-                                            ReviewerRemarkList = new List<ReviewerRemarkList>(),
+
+                                            // Collections
+                                            CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
+                                            //KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
+                                            //imdrManDays = imdrMandaysList ?? new List<ImdrManDays>(),
+                                            //reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
+                                            //ReviewerThreatList = reviewerThreatLists ?? new List<ReviewerThreatList>(),
+                                            //ReviewerRemarkList = reviewerRemarkLists ?? new List<ReviewerRemarkList>(),
+                                            //mdrauditLists = mdrauditLists ?? new List<MDRAuditList>(),
+
+                                            // Meta
                                             CreatedAt = DateTime.Now,
                                             CreatedBy = userId,
                                             Status = status.Id,
                                             IsDelete = false,
                                             IsFinalSubmit = false,
-                                            Fk_UserId = request.TrineeId,
-                                            AssignTo = request.TrineeId
+                                            Fk_UserId = request.ReviewerId
                                         });
-                                    break;
+
+                                        // Insert Trainee (if present)
+                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                                        {
+                                            await _imdr.InsertOneAsync(new tbl_IMDR_Application
+                                            {
+                                                ApplicationId = request.ApplicationId,
+                                                ApplicationName = customerapp.ApplicationId,
+                                                Application_Received_date = DateTime.Now,
+                                                ActiveReviwer = request.ApplicationId ?? "ReviwerOne",  // Default trainee role
+                                                Orgnization_Name = customerapp.Orgnization_Name,
+                                                Fk_Certificate = application.Fk_Certificates,
+                                                AssignTo = request.TrineeId,
+                                                TargetDate = request.targetDate,
+
+                                                // IMDR-specific fields
+                                                Scop_of_Certification = "",
+                                                DeviceMasterfile = "",
+                                                Technical_Areas = new List<TechnicalAreasList>(),
+                                                Availbility_of_TechnicalAreas = false,
+                                                Availbility_of_Auditor = false,
+                                                Audit_Lang = "",
+                                                IsInterpreter = false,
+
+                                                // Collections
+                                                CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
+                                                KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
+                                                //imdrManDays = imdrMandaysList ?? new List<ImdrManDays>(),
+                                                //reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
+                                                //ReviewerThreatList = reviewerThreatLists ?? new List<ReviewerThreatList>(),
+                                                //ReviewerRemarkList = reviewerRemarkLists ?? new List<ReviewerRemarkList>(),
+                                                //mdrauditLists = mdrauditLists ?? new List<MDRAuditList>(),
+
+                                                // Meta
+                                                CreatedAt = DateTime.Now,
+                                                CreatedBy = userId,
+                                                Status = status.Id,
+                                                IsDelete = false,
+                                                IsFinalSubmit = false,
+                                                Fk_UserId = request.TrineeId
+                                            });
+                                        }
+
+                                        break;
+
 
                                     default:
                                         // Handle unknown certification if needed
@@ -1136,7 +1383,7 @@ namespace ZenithApp.ZenithRepository
                             }
 
                         }
-                        MergeDataInPlace(adminData, reviwerData, traineData); // merges directly into data
+                        MergeDataByLatest(adminData, reviwerData, traineData); // merges directly into data
                        
 
 
@@ -1152,82 +1399,262 @@ namespace ZenithApp.ZenithRepository
                     }
                     else if (request.CertificationName == "FSSC")
                     {
+                        // Initialize holders
+                        tbl_FSSC_Application? adminData = null;
+                        tbl_FSSC_Application? reviewerData = null;
+                        tbl_FSSC_Application? traineeData = null;
+
+                        // Fetch base application
                         var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
+                        var data = await _fssc.Find(filter).FirstOrDefaultAsync();
 
-                        var data = await _fssc.Find(filter)
-                                              .SortByDescending(x => x.Id)
-                                              .FirstOrDefaultAsync();
-                        
-                        if (data != null)
+                        // Check if current user is Admin on this application
+                        var filterWithAdmin = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId) &
+                                              Builders<tbl_FSSC_Application>.Filter.Eq(x => x.AssignTo, UserId);
+
+                        if (filterWithAdmin != null)
                         {
-                            var certificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
-                            var assigneeName = _mongoDbService.ReviewerName(data.AssignTo);
-                            var statusName = _mongoDbService.StatusName(data.Status);
-
-                            response.Data = data;
-                            response.CertificateName = certificateName;
-                            response.statusName = statusName;
+                            adminData = await _fssc.Find(filterWithAdmin).FirstOrDefaultAsync();
                         }
-                    }
+                        else
+                        {
+                            // If not admin, check Reviewer/Trainee assignments
+                            var findReviewer = Builders<tbl_FSSC_Application>.Filter.And(
+                                Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                Builders<tbl_FSSC_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // exclude trainee constant
+                            );
 
+                            var reviewerAndTraineeList = await _fssc.Find(findReviewer).ToListAsync();
+                            foreach (var item in reviewerAndTraineeList)
+                            {
+                                var type = _user.Find(x => x.Id == item.AssignTo).FirstOrDefault()?.Type;
+                                if (type == "Reviewer")
+                                {
+                                    var reviewerFilter = Builders<tbl_FSSC_Application>.Filter.And(
+                                        Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_FSSC_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    reviewerData = await _fssc.Find(reviewerFilter).FirstOrDefaultAsync();
+                                }
+                                else if (type == "Trainee")
+                                {
+                                    var traineeFilter = Builders<tbl_FSSC_Application>.Filter.And(
+                                        Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_FSSC_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_FSSC_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    traineeData = await _fssc.Find(traineeFilter).FirstOrDefaultAsync();
+                                }
+                            }
+                        }
+
+                        // Merge Admin > Reviewer > Trainee
+                        MergeDataByLatest(adminData, reviewerData, traineeData);
+
+                        // Enrich response
+                        var assignName = _mongoDbService.ReviewerName(data.AssignTo);
+                        var statusName = _mongoDbService.StatusName(data.Status);
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
+
+                        response.Data = data;
+                        response.Comments = comments;
+                        response.statusName = statusName;
+                    }
                     else if (request.CertificationName == "ICMED")
                     {
-                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
+                        // With the following initialization:
+                        tbl_ICMED_Application? adminData = null;
+                        tbl_ICMED_Application? reviwerData = null;
+                        tbl_ICMED_Application? traineData = null;
 
-                        var data = await _icmed.Find(filter)
-                                               .SortByDescending(x => x.Id)
-                                               .FirstOrDefaultAsync();
+                        var filter = Builders<tbl_ICMED_Application>.Filter
+                                                                    .Eq(x => x.ApplicationId, request.applicationId);
 
-                        if (data != null)
+                        var data = await _icmed.Find(filter).FirstOrDefaultAsync();
+
+                        var filterwithAdmin = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId) &
+                                              Builders<tbl_ICMED_Application>.Filter.Eq(x => x.AssignTo, UserId);
+
+                        if (filterwithAdmin != null)
                         {
-                            var certificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
-                            var assigneeName = _mongoDbService.ReviewerName(data.AssignTo);
-                            var statusName = _mongoDbService.StatusName(data.Status);
-
-                            response.Data = data;
-                            response.CertificateName = certificateName;
-                            response.statusName = statusName;
+                            adminData = await _icmed.Find(filterwithAdmin).FirstOrDefaultAsync();
                         }
+                        else
+                        {
+                            var findreviewer = Builders<tbl_ICMED_Application>.Filter.And(
+                                Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                Builders<tbl_ICMED_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // default/system user
+                            );
+
+                            var reviewerAndTraineeList = await _icmed.Find(findreviewer).ToListAsync();
+                            foreach (var item in reviewerAndTraineeList)
+                            {
+                                var type = _user.Find(x => x.Id == item.AssignTo).FirstOrDefault()?.Type;
+                                if (type == "Reviewer")
+                                {
+                                    var reviwerDatas = Builders<tbl_ICMED_Application>.Filter.And(
+                                        Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_ICMED_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    reviwerData = await _icmed.Find(reviwerDatas).FirstOrDefaultAsync();
+                                }
+                                else if (type == "Trainee")
+                                {
+                                    var traineDatas = Builders<tbl_ICMED_Application>.Filter.And(
+                                        Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_ICMED_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_ICMED_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    traineData = await _icmed.Find(traineDatas).FirstOrDefaultAsync();
+                                }
+                            }
+                        }
+
+                        // Merge all into the latest data
+                        MergeDataByLatest(adminData, reviwerData, traineData);
+
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
+
+                        response.Data = data;
+                        response.Comments = comments;
+                        //response.CertificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        response.statusName = status;
                     }
                     else if (request.CertificationName == "ICMED_PLUS")
                     {
-                        var filter = Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
+                        // With the following initialization:
+                        tbl_ICMED_PLUS_Application? adminData = null;
+                        tbl_ICMED_PLUS_Application? reviwerData = null;
+                        tbl_ICMED_PLUS_Application? traineData = null;
 
-                        var data = await _icmedplus.Find(filter)
-                                               .SortByDescending(x => x.Id)
-                                               .FirstOrDefaultAsync();
+                        var filter = Builders<tbl_ICMED_PLUS_Application>.Filter
+                                                                         .Eq(x => x.ApplicationId, request.applicationId);
 
-                        if (data != null)
+                        var data = await _icmedplus.Find(filter).FirstOrDefaultAsync();
+
+                        var filterwithAdmin = Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId) &
+                                              Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.AssignTo, UserId);
+
+                        if (filterwithAdmin != null)
                         {
-                            var certificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
-                            var assigneeName = _mongoDbService.ReviewerName(data.AssignTo);
-                            var statusName = _mongoDbService.StatusName(data.Status);
-
-                            response.Data = data;
-                            response.CertificateName = certificateName;
-                            response.statusName = statusName;
+                            adminData = await _icmedplus.Find(filterwithAdmin).FirstOrDefaultAsync();
                         }
-                    }
+                        else
+                        {
+                            var findreviewer = Builders<tbl_ICMED_PLUS_Application>.Filter.And(
+                                Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                Builders<tbl_ICMED_PLUS_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // system/default user
+                            );
 
-                    else if (request.CertificationName == "IDMR")
+                            var reviewerAndTraineeList = await _icmedplus.Find(findreviewer).ToListAsync();
+                            foreach (var item in reviewerAndTraineeList)
+                            {
+                                var type = _user.Find(x => x.Id == item.AssignTo).FirstOrDefault()?.Type;
+                                if (type == "Reviewer")
+                                {
+                                    var reviwerDatas = Builders<tbl_ICMED_PLUS_Application>.Filter.And(
+                                        Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    reviwerData = await _icmedplus.Find(reviwerDatas).FirstOrDefaultAsync();
+                                }
+                                else if (type == "Trainee")
+                                {
+                                    var traineDatas = Builders<tbl_ICMED_PLUS_Application>.Filter.And(
+                                        Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    traineData = await _icmedplus.Find(traineDatas).FirstOrDefaultAsync();
+                                }
+                            }
+                        }
+
+                        // Merge all into the latest data
+                        MergeDataByLatest(adminData, reviwerData, traineData);
+
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
+
+                        response.Data = data;
+                        response.Comments = comments;
+                        //response.CertificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        response.statusName = status;
+                    }
+                    else if (request.CertificationName == "IMDR")
                     {
-                        var filter = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
+                        // With the following initialization:
+                        tbl_IMDR_Application? adminData = null;
+                        tbl_IMDR_Application? reviwerData = null;
+                        tbl_IMDR_Application? traineData = null;
 
-                        var data = await _imdr.Find(filter)
-                                              .SortByDescending(x => x.Id)
-                                              .FirstOrDefaultAsync();
+                        var filter = Builders<tbl_IMDR_Application>.Filter
+                                                                   .Eq(x => x.ApplicationId, request.applicationId);
 
-                        if (data != null)
+                        var data = await _imdr.Find(filter).FirstOrDefaultAsync();
+
+                        var filterwithAdmin = Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId) &
+                                              Builders<tbl_IMDR_Application>.Filter.Eq(x => x.AssignTo, UserId);
+
+                        if (filterwithAdmin != null)
                         {
-                            var certificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
-                            var assigneeName = _mongoDbService.ReviewerName(data.AssignTo);
-                            var statusName = _mongoDbService.StatusName(data.Status);
-
-                            response.Data = data;
-                            response.CertificateName = certificateName;
-                            response.statusName = statusName;
+                            adminData = await _imdr.Find(filterwithAdmin).FirstOrDefaultAsync();
                         }
+                        else
+                        {
+                            var findreviewer = Builders<tbl_IMDR_Application>.Filter.And(
+                                Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                Builders<tbl_IMDR_Application>.Filter.Ne(x => x.AssignTo, "686fc25880b29ec6e7867768") // system/default user
+                            );
+
+                            var reviewerAndTraineeList = await _imdr.Find(findreviewer).ToListAsync();
+                            foreach (var item in reviewerAndTraineeList)
+                            {
+                                var type = _user.Find(x => x.Id == item.AssignTo).FirstOrDefault()?.Type;
+                                if (type == "Reviewer")
+                                {
+                                    var reviwerDatas = Builders<tbl_IMDR_Application>.Filter.And(
+                                        Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_IMDR_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    reviwerData = await _imdr.Find(reviwerDatas).FirstOrDefaultAsync();
+                                }
+                                else if (type == "Trainee")
+                                {
+                                    var traineDatas = Builders<tbl_IMDR_Application>.Filter.And(
+                                        Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, data.ApplicationId),
+                                        Builders<tbl_IMDR_Application>.Filter.Eq(x => x.Fk_Certificate, data.Fk_Certificate),
+                                        Builders<tbl_IMDR_Application>.Filter.Eq(x => x.AssignTo, item.AssignTo)
+                                    );
+                                    traineData = await _imdr.Find(traineDatas).FirstOrDefaultAsync();
+                                }
+                            }
+                        }
+
+                        // Merge all into the latest data
+                        MergeDataByLatest(adminData, reviwerData, traineData);
+
+                        var assignmane = _mongoDbService.ReviewerName(data.AssignTo);
+                        var status = _mongoDbService.StatusName(data.Status);
+                        var comments = await GetFieldCommentsAsync(data.ApplicationId, data.Fk_Certificate, UserId, _comments);
+
+                        response.Data = data;
+                        response.Comments = comments;
+                        //response.CertificateName = _mongoDbService.Getcertificatename(data.Fk_Certificate);
+                        response.statusName = status;
                     }
+
                     else
                     {
                         response.Message = "Invalid Certification Name.";
@@ -1246,74 +1673,6 @@ namespace ZenithApp.ZenithRepository
 
 
 
-
-
-
-                    //var Fkcertificate = _iso
-                    //    .Find(x => x.Id == request.applicationId && x.IsDelete == false)
-                    //    .FirstOrDefault().Fk_Certificate;
-
-                    //var nameofcertificate = _masterCertificate
-                    //    .Find(x => x.Id == Fkcertificate && x.Is_Delete == false)
-                    //    .FirstOrDefault()?.Id;
-
-                    //var app = _iso
-                    //    .Find(x => x.Fk_Certificate == nameofcertificate && x.IsDelete == false)
-                    //    .SortByDescending(x => x.CreatedAt)
-                    //    .FirstOrDefault();
-
-                    //var status = _status
-                    //    .Find(x => x.Id == app.Status && x.IsDelete == false)
-                    //    .FirstOrDefault().StatusName;
-
-                    //if (app == null)
-                    //{
-                    //    response.Message = "No data found for the given ApplicationId.";
-                    //    response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
-                    //    response.Success = false;
-                    //    response.ResponseCode = 1;
-                    //    return response;
-                    //}
-
-
-                    //var result = new ReviewerApplicationData
-                    //{
-                    //    Id = app.Id,
-                    //    ApplicationId = app.ApplicationId,
-                    //    Orgnization_Name = app.Orgnization_Name,
-                    //    Application_Received_date = app.Application_Received_date,
-                    //    Constituation_of_Orgnization = app.Constituation_of_Orgnization,
-                    //    Certification_Name = _masterCertificate
-                    //        .Find(x => x.Id == app.Fk_Certificate && x.Is_Delete == false)
-                    //        .FirstOrDefault()?.Certificate_Name,
-                    //    Audit_Type = app.Audit_Type,
-                    //    Scop_Of_Certification = app.Scop_of_Certification,
-                    //    Technical_Areas = app.Technical_Areas,
-                    //    Accreditations = app.Accreditations,
-                    //    Availbility_of_TechnicalAreas = app.Availbility_of_TechnicalAreas,
-                    //    Availbility_of_Auditor = app.Availbility_of_Auditor,
-                    //    Audit_Lang = app.Audit_Lang,
-                    //    Is_Interpreter = app.IsInterpreter,
-                    //    Is_Multisite_Sampling = app.IsMultisitesampling,
-                    //    Total_Site = app.Total_site,
-                    //    Sample_Site = app.Sample_Site,
-                    //    Shift_Details = app.Shift_Details,
-                    //    status = _status.Find(x => x.Id == app.Status).FirstOrDefault()?.StatusName ?? "InProgress",
-                    //    AssignUser = app.Fk_UserId,
-                    //    CustomerSites = app.CustomerSites,
-                    //    KeyPersonnels = app.reviewerKeyPersonnel,
-                    //    MandaysLists = app.MandaysLists,
-                    //    ThreatLists = app.ReviewerThreatList,
-                    //    RemarkLists = app.ReviewerRemarkList
-                    //};
-
-
-
-                    //response.Data = new List<ReviewerApplicationData> { result };
-                    //response.Message = "Data fetched successfully.";
-                    //response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                    //response.Success = true;
-                    //response.ResponseCode = 0;
 
 
 
@@ -1939,21 +2298,130 @@ namespace ZenithApp.ZenithRepository
 
                     else if (request.CertificationName == "FSSC")
                     {
-                        var filter = Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId);
-                        var data = await _fssc.Find(filter)
-                                               .SortByDescending(x => x.Id)
-                                               .FirstOrDefaultAsync();
-                        
+                        var filter = Builders<tbl_FSSC_Application>.Filter.And(
+                            Builders<tbl_FSSC_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId)
+                        );
+
+                        var applications = await _fssc.Find(filter).ToListAsync();
+
+                        var result = applications
+                            .GroupBy(a => a.AssignTo)
+                            .Select(g =>
+                            {
+                                var latestApp = g.OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt).FirstOrDefault();
+                                return new ReviewerHistoryDto
+                                {
+                                    ApplicationId = latestApp.ApplicationId,
+                                    AssignPersonId = g.Key,
+                                    AssignPersonName = _mongoDbService.ReviewerName(g.Key),
+                                    AssignPersonRole = _mongoDbService.UserRoleType(g.Key),
+                                    LatestUpdatedDate = latestApp.UpdatedAt ?? latestApp.CreatedAt
+                                };
+                            })
+                            .ToList();
+
+                        // ✅ Add reviewer history array to response
+                        response.ReviewerHistory = result;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 200;
                     }
+
                     else if (request.CertificationName == "ICMED")
                     {
-                        var filter = Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId);
-                        var data = await _icmed.Find(filter)
-                                               .SortByDescending(x => x.Id)
-                                              .FirstOrDefaultAsync();
+                        var filter = Builders<tbl_ICMED_Application>.Filter.And(
+                            Builders<tbl_ICMED_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId)
+                        );
+
+                        var applications = await _icmed.Find(filter).ToListAsync();
+
+                        var result = applications
+                            .GroupBy(a => a.AssignTo)
+                            .Select(g =>
+                            {
+                                var latestApp = g.OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt).FirstOrDefault();
+                                return new ReviewerHistoryDto
+                                {
+                                    ApplicationId = latestApp.ApplicationId,
+                                    AssignPersonId = g.Key,
+                                    AssignPersonName = _mongoDbService.ReviewerName(g.Key),
+                                    AssignPersonRole = _mongoDbService.UserRoleType(g.Key),
+                                    LatestUpdatedDate = latestApp.UpdatedAt ?? latestApp.CreatedAt
+                                };
+                            })
+                            .ToList();
+
+                        // ✅ Add reviewer history array to response
+                        response.ReviewerHistory = result;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 200;
                     }
+                    else if (request.CertificationName == "IMDR")
+                    {
+                        var filter = Builders<tbl_IMDR_Application>.Filter.And(
+                            Builders<tbl_IMDR_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId)
+                        );
+
+                        var applications = await _imdr.Find(filter).ToListAsync();
+
+                        var result = applications
+                            .GroupBy(a => a.AssignTo)
+                            .Select(g =>
+                            {
+                                var latestApp = g.OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt).FirstOrDefault();
+                                return new ReviewerHistoryDto
+                                {
+                                    ApplicationId = latestApp.ApplicationId,
+                                    AssignPersonId = g.Key,
+                                    AssignPersonName = _mongoDbService.ReviewerName(g.Key),
+                                    AssignPersonRole = _mongoDbService.UserRoleType(g.Key),
+                                    LatestUpdatedDate = latestApp.UpdatedAt ?? latestApp.CreatedAt
+                                };
+                            })
+                            .ToList();
+
+                        // ✅ Add reviewer history array to response
+                        response.ReviewerHistory = result;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 200;
+                    }
+                    else if (request.CertificationName == "ICMED_PLUS")
+                    {
+                        var filter = Builders<tbl_ICMED_PLUS_Application>.Filter.And(
+                            Builders<tbl_ICMED_PLUS_Application>.Filter.Eq(x => x.ApplicationId, request.ApplicationId)
+                        );
+
+                        var applications = await _icmedplus.Find(filter).ToListAsync();
+
+                        var result = applications
+                            .GroupBy(a => a.AssignTo)
+                            .Select(g =>
+                            {
+                                var latestApp = g.OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt).FirstOrDefault();
+                                return new ReviewerHistoryDto
+                                {
+                                    ApplicationId = latestApp.ApplicationId,
+                                    AssignPersonId = g.Key,
+                                    AssignPersonName = _mongoDbService.ReviewerName(g.Key),
+                                    AssignPersonRole = _mongoDbService.UserRoleType(g.Key),
+                                    LatestUpdatedDate = latestApp.UpdatedAt ?? latestApp.CreatedAt
+                                };
+                            })
+                            .ToList();
+
+                        // ✅ Add reviewer history array to response
+                        response.ReviewerHistory = result;
+                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                        response.Success = true;
+                        response.ResponseCode = 200;
+                    }
+
+
+
                 }
-                
+
             }
             catch (Exception ex)
             {
@@ -1970,7 +2438,7 @@ namespace ZenithApp.ZenithRepository
             var filter = Builders<tbl_ApplicationFieldComment>.Filter.And(
                 Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.ApplicationId, applicationId),
                 Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, fkCertificate),
-                Builders<tbl_ApplicationFieldComment>.Filter.Ne(c => c.Fk_User, UserId)
+                Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.Fk_User, UserId)
             );
 
             //return await commentCollection
@@ -1989,44 +2457,129 @@ namespace ZenithApp.ZenithRepository
                 return await pipeline.ToListAsync();
             }
 
-        private T MergeDataInPlace<T>(T admin, T reviewer, T trainee) where T : class, new()
-        {
-            // If admin record doesn’t exist, create new target (empty object)
-            var target = admin ?? new T();
+        //private T MergeDataInPlace<T>(T admin, T reviewer, T trainee) where T : class, new()
+        //{
+        //    // If admin record doesn’t exist, create new target (empty object)
+        //    var target = admin ?? new T();
 
-            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" , "ActiveReviwer" };
+        //    var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" , "ActiveReviwer" };
+
+        //    foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        //    {
+        //        if (excludedFields.Contains(prop.Name))
+        //            continue;
+
+        //        var adminValue = admin != null ? prop.GetValue(admin) : null;
+        //        var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
+        //        var traineeValue = trainee != null ? prop.GetValue(trainee) : null;
+        //        var currentValue = prop.GetValue(target);
+
+        //        if (HasValue(adminValue))
+        //        {
+        //            // Admin wins
+        //            prop.SetValue(target, adminValue);
+        //        }
+        //        else if (HasValue(reviewerValue))
+        //        {
+        //            // Reviewer fallback
+        //            prop.SetValue(target, reviewerValue);
+        //        }
+        //        else if (HasValue(traineeValue))
+        //        {
+        //            // Trainee fallback
+        //            prop.SetValue(target, traineeValue);
+        //        }
+        //        // else leave default/null
+        //    }
+
+        //    return target;
+        //}
+
+        //private bool HasValue(object value)
+        //{
+        //    if (value == null) return false;
+        //    if (value is string str) return !string.IsNullOrWhiteSpace(str);
+
+        //    var type = value.GetType();
+        //    if (type.IsValueType)
+        //        return !value.Equals(Activator.CreateInstance(type));
+
+        //    if (value is System.Collections.IEnumerable enumerable && !(value is string))
+        //        return enumerable.GetEnumerator().MoveNext();
+
+        //    return true;
+        //}
+        private T MergeDataByLatest<T>(T admin, T reviewer, T trainee) where T : class, new()
+        {
+            var target = new T();
+            var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState", "ActiveReviwer" };
+
+            // Collect available candidates
+            var candidates = new List<T> { admin, reviewer, trainee }
+                             .Where(x => x != null)
+                             .ToList();
+
+            if (!candidates.Any())
+                return target;
+
+            // Sort candidates by UpdatedAt (or CreatedAt fallback) - latest first
+            var orderedCandidates = candidates
+                .Select(c => new
+                {
+                    Obj = c,
+                    Updated = GetUpdatedDate(c)
+                })
+                .OrderByDescending(x => x.Updated)
+                .ToList();
 
             foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
                 if (excludedFields.Contains(prop.Name))
                     continue;
 
-                var adminValue = admin != null ? prop.GetValue(admin) : null;
-                var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
-                var traineeValue = trainee != null ? prop.GetValue(trainee) : null;
-                var currentValue = prop.GetValue(target);
+                object finalValue = null;
 
-                if (HasValue(adminValue))
+                // Loop through candidates by latest updated
+                foreach (var candidate in orderedCandidates)
                 {
-                    // Admin wins
-                    prop.SetValue(target, adminValue);
+                    var value = prop.GetValue(candidate.Obj);
+                    if (HasValue(value))
+                    {
+                        finalValue = value;
+                        break; // take the first non-null, non-empty from latest record
+                    }
                 }
-                else if (HasValue(reviewerValue))
-                {
-                    // Reviewer fallback
-                    prop.SetValue(target, reviewerValue);
-                }
-                else if (HasValue(traineeValue))
-                {
-                    // Trainee fallback
-                    prop.SetValue(target, traineeValue);
-                }
-                // else leave default/null
+
+                if (finalValue != null)
+                    prop.SetValue(target, finalValue);
             }
 
             return target;
         }
 
+        /// <summary>
+        /// Get UpdatedAt or CreatedAt timestamp from object
+        /// </summary>
+        private DateTime GetUpdatedDate<T>(T obj)
+        {
+            if (obj == null) return DateTime.MinValue;
+
+            var type = typeof(T);
+
+            var updatedAt = type.GetProperty("UpdatedAt")?.GetValue(obj) as DateTime?;
+            if (updatedAt.HasValue && updatedAt.Value != default)
+                return updatedAt.Value;
+
+            var createdAt = type.GetProperty("CreatedAt")?.GetValue(obj) as DateTime?;
+            if (createdAt.HasValue && createdAt.Value != default)
+                return createdAt.Value;
+
+            return DateTime.MinValue;
+        }
+
+        /// <summary>
+        /// Check if value is valid (not null/empty/default)
+        /// </summary>
         private bool HasValue(object value)
         {
             if (value == null) return false;
@@ -2050,9 +2603,6 @@ namespace ZenithApp.ZenithRepository
             var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
             var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
             var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
-
-            if (userType?.Trim().ToLower() == "admin")
-            {
                 try
                 {
                     
@@ -2066,8 +2616,32 @@ namespace ZenithApp.ZenithRepository
                             .Set(x => x.UpdatedAt, DateTime.UtcNow); // or DateTime.Now if you prefer local time
 
                             await _iso.UpdateManyAsync(filter, update);
-                        }
-                        else if(request.status=="Rejected")
+
+                         var application = await _customercertificates
+                            .Find(x => x.Id == request.applicationId)
+                            .FirstOrDefaultAsync();
+
+                            if (application != null)
+                            {
+                                var updateStatus = Builders<tbl_customer_certificates>.Update
+                                    .Set(x => x.status, "68a80adcf43ed36702310521")
+                                    .Set(x => x.UpdatedAt, DateTime.Now); // optional
+
+                                var result = await _customercertificates.UpdateOneAsync(
+                                    x => x.Id == request.applicationId,
+                                    updateStatus
+                                );
+
+                                if (result.ModifiedCount == 0)
+                                {
+                                    Console.WriteLine("⚠️ No document was updated. Check ID type/field name.");
+                                }
+                            }
+
+
+
+                    }
+                    else if(request.status=="Rejected")
                         {
                             var update = Builders<tbl_ISO_Application>.Update
                             .Set(x => x.Status, "68ac658b45a82f9f829724db")
@@ -2091,20 +2665,14 @@ namespace ZenithApp.ZenithRepository
                     response.HttpStatusCode = HttpStatusCode.InternalServerError;
                     response.Success = false;
                 }
-            }
-            else
-            {
-                response.Message = "Invalid token.";
-                response.HttpStatusCode = HttpStatusCode.Unauthorized;
-                response.Success = false;
-            }
+            
 
             return response;
         }
 
 
         protected override void Disposing()
-        {
+        { 
             //throw new NotImplementedException();
         }
     }
