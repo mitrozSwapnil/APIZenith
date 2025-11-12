@@ -19,6 +19,7 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<AuthRepository>();
 builder.Services.AddScoped<CustomerRepository>();
 builder.Services.AddScoped<QuotationRepository>();
+builder.Services.AddScoped<AuditRepository>();
 builder.Services.AddScoped<ReviwerRepository>();
 builder.Services.AddScoped<AdminRepository>();
 builder.Services.AddScoped<MasterRepository>();
@@ -120,22 +121,27 @@ builder.Services.AddSwaggerGen(c =>
 
 
 var app = builder.Build();
-
+app.UseCors("AllowAll");
 // Configure the HTTP request pipeline.
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Zenith API v1");
+    c.RoutePrefix = string.Empty; // makes Swagger UI open at root URL
+});
+
+// Optional: only show detailed errors in Development
 if (app.Environment.IsDevelopment())
 {
-    app.UseDeveloperExceptionPage(); // 👈 Add this
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseDeveloperExceptionPage();
 }
+
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseSession();
 app.UseRouting();
-app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

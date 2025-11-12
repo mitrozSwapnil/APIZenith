@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
+using System.Net;
 using ZenithApp.Settings;
 using ZenithApp.ZenithEntities;
 using ZenithApp.ZenithMessage;
@@ -127,6 +128,53 @@ namespace ZenithApp.ZenithRepository
 
             return response;
         }
+
+        public async Task<getSubTypeResponse> GetSubType(getSubTypeRequest request)
+        {
+            var response = new getSubTypeResponse();
+            var userId = _acc.HttpContext?.Session.GetString("UserId");
+
+            if (request == null || string.IsNullOrWhiteSpace(request.id))
+            {
+                response.Message = "CertificationId is required.";
+                response.HttpStatusCode = HttpStatusCode.BadRequest;
+                response.Success = false;
+                response.ResponseCode = 1;
+                return response;
+            }
+
+            try
+            {
+                var certificate = await _master
+                    .Find(x => x.Id == request.id)
+                    .FirstOrDefaultAsync();
+
+                if (certificate == null)
+                {
+                    response.Message = "Certificate not found.";
+                    response.HttpStatusCode = HttpStatusCode.NotFound;
+                    response.Success = false;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+
+                response.SubTypes = certificate.SubType ?? new List<SubTypeModel>();
+                response.Message = "SubTypes fetched successfully.";
+                response.HttpStatusCode = HttpStatusCode.OK;
+                response.Success = true;
+                response.ResponseCode = 0;
+            }
+            catch (Exception ex)
+            {
+                response.Message = "Exception: " + ex.Message;
+                response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                response.Success = false;
+                response.ResponseCode = 1;
+            }
+
+            return response;
+        }
+
 
 
 

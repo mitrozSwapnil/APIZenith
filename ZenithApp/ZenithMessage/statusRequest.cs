@@ -4,5 +4,6 @@
     {
         public string? applicationId { get; set; }
         public string? status { get; set; }
+        public string? type { get; set; }
     }
 }

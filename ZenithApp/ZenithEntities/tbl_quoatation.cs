@@ -9,12 +9,14 @@ namespace ZenithApp.ZenithEntities
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; }
-
         public string ApplicationId { get; set; }
+        public string sub_applicationId { get; set; }
         public string QuotationId { get; set; }
         public string Currency { get; set; }
         public bool IsSubmit { get; set; }
+        public bool IsAuditAssign { get; set; }
         public string CertificateType { get; set; }
+        public string AuditFileNumber { get; set; }
 
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
 

@@ -1,5 +1,7 @@
 ﻿using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Bson;
+using static ZenithApp.ZenithRepository.AdminRepository;
+using ZenithApp.ZenithMessage;
 
 namespace ZenithApp.ZenithEntities
 {
@@ -29,11 +31,9 @@ namespace ZenithApp.ZenithEntities
         public DateTime UpdatedAt { get; set; }
 
         public string CreatedBy { get; set; }
-        public string? File { get; set; }
+        public List<AnnexureList> File { get; set; }
         public string UpdatedBy { get; set; }
-
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string? AssignTo { get; set; }
+        public List<AssignedUser> AssignTo { get; set; } = new List<AssignedUser>();
 
 
     }

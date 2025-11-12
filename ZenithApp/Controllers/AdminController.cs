@@ -135,6 +135,24 @@ namespace ZenithApp.Controllers
             _acc.HttpContext?.Session.SetString("UserId", UserId);
             return this.ProcessRequest<BaseResponse>(model);
         }
+        [HttpPost("AddOrUpdateMasterUser")]
+        public IActionResult AddOrUpdateMasterUser(AddMasterUsersRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<BaseResponse>(model);
+        }
+        [HttpPost("GetMasterUsers")]
+        public IActionResult GetMasterUsers(GetMasterUsersRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<GetMasterUsersResponse>(model);
+        }
 
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
@@ -187,6 +205,14 @@ namespace ZenithApp.Controllers
             else if (action == nameof(SaveApplicationStatus))
             {
                 return _adminRepository.SaveApplicationStatus(request as statusRequest).Result;
+            }
+            else if (action == nameof(AddOrUpdateMasterUser))
+            {
+                return _adminRepository.AddOrUpdateMasterUser(request as AddMasterUsersRequest).Result;
+            }
+            else if (action == nameof(GetMasterUsers))
+            {
+                return _adminRepository.GetMasterUsers(request as GetMasterUsersRequest).Result;
             }
 
             throw new NotImplementedException();

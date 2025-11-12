@@ -8,6 +8,7 @@ namespace ZenithApp.ZenithMessage
         
 
         public string? ApplicationId { get; set; }
+        public string? sub_applicationId { get; set; }
       
 
         public string? CertificateType { get; set; }

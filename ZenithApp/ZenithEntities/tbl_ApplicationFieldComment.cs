@@ -18,13 +18,21 @@ namespace ZenithApp.ZenithEntities
 
         public string FieldName { get; set; }
         public string FieldUserType{ get; set; }
+        public bool? isResolved { get; set; }
 
         public string CommentText { get; set; }
 
         [BsonRepresentation(BsonType.ObjectId)]
         public string CreatedBy { get; set; }
 
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string ResolvedBy { get; set; }
+
         [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
         public DateTime CreatedOn { get; set; }
+
+        [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
+        public DateTime ResolvedOn { get; set; }
+
     }
 }

@@ -1,8 +1,10 @@
-﻿namespace ZenithApp.ZenithMessage
+﻿using ZenithApp.ZenithEntities;
+
+namespace ZenithApp.ZenithMessage
 {
     public class userDropdownResponse : BaseResponse
     {
-        public List<UserDropdownDto> Data { get; set; }
+        public List<UserDropdownDto> Data { get; set; } = new();
 
     }
 }

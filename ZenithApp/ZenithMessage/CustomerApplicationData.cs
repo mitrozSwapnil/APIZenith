@@ -10,7 +10,7 @@ namespace ZenithApp.ZenithMessage
         public string? Constituation_of_Orgnization { get; set; }
         public string? EmailId { get; set; }
         public string? Expected_Audit_Date { get; set; }
-        public string? Holiday { get; set; }
+        public List<string>? Holiday { get; set; }
         public string? Audit_Language { get; set; }
         public string? ConsultantName { get; set; }
         public string? FileName { get; set; }
@@ -18,11 +18,13 @@ namespace ZenithApp.ZenithMessage
         public string? Contact_details { get; set; }
         public DateTime? Datetime { get; set; }
         public string? Designation { get; set; }
-        public string? Fk_Annaxture { get; set; }
+        public List<AnnexureList>? Fk_Annaxture { get; set; }
 
         public List<OutsourceProcessItem>? OutsourceProcess { get; set; }
-        public List<CertificateDto>? ApplicationCertificates { get; set; }
-        public List<CertificateDto>? ProductCertificates { get; set; }
+        //public List<CertificateDto>? ApplicationCertificates { get; set; }
+        //public List<CertificateDto>? ProductCertificates { get; set; }
+        public List<tbl_master_certificates>? ApplicationCertificates { get; set; }
+        public List<tbl_master_certificates>? ProductCertificates { get; set; }
         public List<KeyPersonnelList>? KeyPersonnels { get; set; }
         public List<CustomerSiteList>? CustomerSites { get; set; }
         public List<CustomerEntityList>? CustomerEntities { get; set; }
@@ -31,6 +33,6 @@ namespace ZenithApp.ZenithMessage
     {
         public string Id { get; set; }
         public string Name { get; set; }
-        public string? File { get; set; }
+        public List<AnnexureList>? File { get; set; }
     }
 }

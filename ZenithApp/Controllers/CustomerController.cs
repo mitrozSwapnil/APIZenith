@@ -127,7 +127,7 @@ namespace ZenithApp.Controllers
             }
             else if(action == nameof(GetCustomerApplication))
             {
-                return _customerRepository.GetCustomerApplication(request as getCustomerApplicationRequest);
+                return _customerRepository.GetCustomerApplication(request as getCustomerApplicationRequest).Result;
             }
             else if (action == nameof(GetCustomerDashboard))
             {

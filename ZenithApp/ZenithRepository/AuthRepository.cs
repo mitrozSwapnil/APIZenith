@@ -73,7 +73,8 @@ namespace gmkRepositories
                             UpdatedAt = GetLocalDateTime(),
                             CreatedBy = "System",
                             UpdatedBy = "System",
-                            IsDelete = 0
+                            IsDelete = 0,
+                            Type ="customer"
                         };
                         _user.InsertOne(user);
 
@@ -103,43 +104,102 @@ namespace gmkRepositories
                         userId = userid,
                     };
                 }
-                else 
+                else if(request.loginType == "Applicant")
                 {
-                if (string.IsNullOrWhiteSpace(request.email))
-                    return CreateErrorResponse("Please enter email.", 400);
+                    if (string.IsNullOrWhiteSpace(request.email) && string.IsNullOrWhiteSpace(request.mobileNo))
+                    {
+                        return CreateErrorResponse<LoginResponse>("Please enter email or mobile.", 400);
+                    }
+                    string? userid = "0";
+
+                    var user = _user.Find(x =>
+                        (x.EmailId == request.email || x.ContactNo == request.mobileNo)
+                        && x.IsDelete == 0).FirstOrDefault();
+
+                    if (user == null)
+                    {
+                        // Register new Reviewer
+                        user = new tbl_user
+                        {
+                            FullName = " ",
+                            EmailId = !string.IsNullOrWhiteSpace(request.email) && request.email.Contains("@") ? request.email : null,
+                            ContactNo = !string.IsNullOrWhiteSpace(request.mobileNo) ? request.mobileNo : null,
+
+                            Password = "123456", // Default Password (never used)
+                            Fk_RoleID = "69034974aeabfa8f38e7d4f8",
+                            CreatedAt = GetLocalDateTime(),
+                            UpdatedAt = GetLocalDateTime(),
+                            CreatedBy = "System",
+                            UpdatedBy = "System",
+                            IsDelete = 0,
+                            Type = "Applicant"
+                        };
+                        _user.InsertOne(user);
+
+                        userid = user.Id;
+                    }
+                    else
+                    {
+                        // Check role
+                        if (user.Fk_RoleID != "69034974aeabfa8f38e7d4f8")
+                            return CreateErrorResponse<LoginResponse>("User is not a Applicant.", 400);
+                    }
+
+                    // Send static OTP
+                    userid = user.Id;
+                    var otp = "0000";
+                    if (!string.IsNullOrWhiteSpace(user.EmailId))
+                        SendEmailOtp(user.EmailId, otp);
+                    else if (!string.IsNullOrWhiteSpace(user.ContactNo))
+                        SendSmsOtp(user.ContactNo, otp);
+
+                    response.Message = "Otp send successfully.";
+                    response.Success = true;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                    response.ResponseCode = 0;
+                    response.data = new LoginData
+                    {
+                        userId = userid,
+                    };
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(request.email))
+                        return CreateErrorResponse("Please enter email.", 400);
 
                     var user = _user.Find(x => x.UserName == request.email && x.IsDelete == 0).FirstOrDefault();
 
-                if (user == null)
-                    return CreateErrorResponse("Invalid username.", 400);
+                    if (user == null)
+                        return CreateErrorResponse("Invalid username.", 400);
 
-                if (user.Password != request.password)
-                    return CreateErrorResponse("Invalid password.", 400);
+                    if (user.Password != request.password)
+                        return CreateErrorResponse("Invalid password.", 400);
 
-                var role = _roles.Find(x => x.Id == user.Fk_RoleID).FirstOrDefault(); 
-                var userRole = role.roleName;
-                var token = GenerateJwtToken(user.Id, user.ContactNo, userRole, user.Type);
+                    var role = _roles.Find(x => x.Id == user.Fk_RoleID).FirstOrDefault();
+                    var userRole = role.roleName;
+                    var token = GenerateJwtToken(user.Id, user.ContactNo, userRole);
 
-                _acc.HttpContext.Session.Set("Login_ID", Encoding.UTF8.GetBytes(user.Id));
+                    _acc.HttpContext.Session.Set("Login_ID", Encoding.UTF8.GetBytes(user.Id));
 
-                response.code = 200;
-                response.HttpStatusCode = HttpStatusCode.OK;
-                response.Success = true;
-                response.Message = "Login successful.";
-                response.data = new LoginData
-                {
-                    token = token,
-                    userId = user.Id,
-                    fullName = user.FullName,
-                    Role = userRole,
-                    email = user.EmailId,
-                    mobileNo = user.ContactNo,
-                    Department = user.Department,
-                };
+                    response.code = 200;
+                    response.HttpStatusCode = HttpStatusCode.OK;
+                    response.Success = true;
+                    response.Message = "Login successful.";
+                    response.data = new LoginData
+                    {
+                        token = token,
+                        userId = user.Id,
+                        fullName = user.FullName,
+                        Role = userRole,
+                        email = user.EmailId,
+                        mobileNo = user.ContactNo,
+                        Department = user.Department,
+                        UserType = user.Type
+                    };
 
-                return response;
-            }
-                return response;
+                    return response;
+                }
+                    return response;
             }
             catch (Exception ex)
             {
@@ -268,49 +328,103 @@ namespace gmkRepositories
         }
         public LoginResponse VerifyOtp(VerifyOtpRequest request )
         {
-            if (string.IsNullOrWhiteSpace(request.userId))
-                return CreateErrorResponse<LoginResponse>("Please enter email or mobile number.", 400);
-
-            if (string.IsNullOrWhiteSpace(request.otp))
-                return CreateErrorResponse<LoginResponse>("Please enter OTP.", 400);
-
-            var user = _user.Find(x =>
-                x.Id == request.userId  && x.IsDelete == 0).FirstOrDefault();
-
-            if (user == null)
-                return CreateErrorResponse<LoginResponse>("User not found.", 400);
-
-            if (user.Fk_RoleID != "686fc53af41f7edee9b89cd7")
-                return CreateErrorResponse<LoginResponse>("User is not a Reviewer.", 400);
-
-            if (request.otp != "0000")
-                return CreateErrorResponse<LoginResponse>("Invalid OTP.", 400);
-
-
-            var role = "customer"; // Assuming Reviewer role is static for this example
-            var token = GenerateJwtToken(user.Id, user.ContactNo, role,user.Type);
-
-            _acc.HttpContext.Session.Set("Login_ID", Encoding.UTF8.GetBytes(user.Id));
-
-            return new LoginResponse
+            var fkrole = _user.Find(x => x.Id == request.userId).FirstOrDefault().Fk_RoleID;
+            if(fkrole == "686fc53af41f7edee9b89cd7")
             {
-                code = 200,
-                HttpStatusCode = HttpStatusCode.OK,
-                Success = true,
-                Message = "Login successful.",
-                data = new LoginData
+                if (string.IsNullOrWhiteSpace(request.userId))
+                    return CreateErrorResponse<LoginResponse>("Please enter email or mobile number.", 400);
+
+                if (string.IsNullOrWhiteSpace(request.otp))
+                    return CreateErrorResponse<LoginResponse>("Please enter OTP.", 400);
+
+                var user = _user.Find(x =>
+                    x.Id == request.userId && x.IsDelete == 0).FirstOrDefault();
+
+                if (user == null)
+                    return CreateErrorResponse<LoginResponse>("User not found.", 400);
+
+                if (user.Fk_RoleID != "686fc53af41f7edee9b89cd7")
+                    return CreateErrorResponse<LoginResponse>("User is not a Reviewer.", 400);
+
+                if (request.otp != "0000")
+                    return CreateErrorResponse<LoginResponse>("Invalid OTP.", 400);
+
+
+                var role = "customer"; // Assuming Reviewer role is static for this example
+                var token = GenerateJwtToken(user.Id, user.ContactNo, role);
+
+                _acc.HttpContext.Session.Set("Login_ID", Encoding.UTF8.GetBytes(user.Id));
+
+                return new LoginResponse
                 {
-                    token = token,
-                    userId = user.Id,
-                    fullName = user.FullName,
-                    Role = "customer",
-                    email = user.EmailId,
-                    mobileNo = user.ContactNo,
-                    Department = user.Department,
-                }
-            };
+                    code = 200,
+                    HttpStatusCode = HttpStatusCode.OK,
+                    Success = true,
+                    Message = "Login successful.",
+                    data = new LoginData
+                    {
+                        token = token,
+                        userId = user.Id,
+                        fullName = user.FullName,
+                        Role = "customer",
+                        email = user.EmailId,
+                        mobileNo = user.ContactNo,
+                        Department = user.Department,
+                    }
+                };
+            }
+            else if(fkrole == "69034974aeabfa8f38e7d4f8")
+            {
+                if (string.IsNullOrWhiteSpace(request.userId))
+                    return CreateErrorResponse<LoginResponse>("Please enter email or mobile number.", 400);
+
+                if (string.IsNullOrWhiteSpace(request.otp))
+                    return CreateErrorResponse<LoginResponse>("Please enter OTP.", 400);
+
+                var user = _user.Find(x =>
+                    x.Id == request.userId && x.IsDelete == 0).FirstOrDefault();
+
+                if (user == null)
+                    return CreateErrorResponse<LoginResponse>("User not found.", 400);
+
+                if (user.Fk_RoleID != "69034974aeabfa8f38e7d4f8")
+                    return CreateErrorResponse<LoginResponse>("User is not a Reviewer.", 400);
+
+                if (request.otp != "0000")
+                    return CreateErrorResponse<LoginResponse>("Invalid OTP.", 400);
+
+
+                var role = "Applicant"; // Assuming Reviewer role is static for this example
+                var token = GenerateJwtToken(user.Id, user.ContactNo, role);
+
+                _acc.HttpContext.Session.Set("Login_ID", Encoding.UTF8.GetBytes(user.Id));
+
+                return new LoginResponse
+                {
+                    code = 200,
+                    HttpStatusCode = HttpStatusCode.OK,
+                    Success = true,
+                    Message = "Login successful.",
+                    data = new LoginData
+                    {
+                        token = token,
+                        userId = user.Id,
+                        fullName = user.FullName,
+                        Role = "Applicant",
+                        email = user.EmailId,
+                        mobileNo = user.ContactNo,
+                        Department = user.Department,
+                    }
+                };
+            }
+            else
+            {
+                // 👇 Add this to ensure every path returns a LoginResponse
+                return CreateErrorResponse<LoginResponse>("Invalid role or unauthorized access.", 400);
+            }
+
         }
-        private string GenerateJwtToken(string userId, string mobileNumber, string role,string type)
+        private string GenerateJwtToken(string userId, string mobileNumber, string role)
         {
             var jwtSettings = _configuration.GetSection("Jwt");
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]));

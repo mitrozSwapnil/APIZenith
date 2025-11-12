@@ -2,6 +2,7 @@
 {
     public class assignUserRequest : BaseRequest
     {
+       
         public string ApplicationId { get; set; }
         public string TrineeId { get; set; }
         public string ReviewerId { get; set; }

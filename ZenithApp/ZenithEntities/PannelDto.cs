@@ -6,5 +6,6 @@
         public int? totalQuotation { get; set; }
         public int? totalAuditFile { get; set; }
         public int? other { get; set; }
+        
     }
 }

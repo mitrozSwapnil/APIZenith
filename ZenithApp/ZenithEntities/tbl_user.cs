@@ -16,9 +16,12 @@ namespace ZenithApp.ZenithEntities
         public List<string>? Department { get; set; }
         public string? ContactNo{ get; set; }
         public string? Address{ get; set; }
+        public string? CertificateName{ get; set; }
         public string? Gender { get; set; }
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Fk_RoleID { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+         public string? FkCertificate { get; set; }
         [BsonRepresentation(BsonType.ObjectId)]
         public string? Fk_Otp{ get; set; }
         public int? IsDelete{ get; set; }

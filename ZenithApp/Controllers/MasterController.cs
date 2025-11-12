@@ -151,6 +151,14 @@ namespace ZenithApp.Controllers
             _repository.CreateMasterCategory(mastercategory);
             return CreatedAtAction(nameof(GetCategory), mastercategory);
         }
+        [HttpPost("GetSubType")]
+        public async Task<ActionResult<getSubTypeResponse>> GetSubType([FromBody] getSubTypeRequest request)
+        {
+            var response = await _repository.GetSubType(request);
+
+            // Return with correct HTTP status code
+            return StatusCode((int)response.HttpStatusCode, response);
+        }
 
     }
 }

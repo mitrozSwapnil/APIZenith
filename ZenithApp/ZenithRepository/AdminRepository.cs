@@ -1,4 +1,7 @@
-﻿using Microsoft.Extensions.Options;
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using System.Net;
 using System.Reflection;
@@ -41,7 +44,8 @@ namespace ZenithApp.ZenithRepository
         private readonly IMongoCollection<tbl_ApplicationFieldComment> _comments;
         private readonly IMongoCollection<tbl_quoatation> _quoatation;
 
-
+        private readonly IMongoCollection<tbl_Audit> _audit;
+        private readonly IMongoCollection<tbl_dynamic_audit_template> _dynamic;
 
 
         private readonly IHttpContextAccessor _acc;
@@ -74,14 +78,12 @@ namespace ZenithApp.ZenithRepository
             _history = database.GetCollection<tbl_ApplicationFieldHistory>("tbl_ApplicationFieldHistory");
             _comments = database.GetCollection<tbl_ApplicationFieldComment>("tbl_ApplicationFieldComment");
             _quoatation = database.GetCollection<tbl_quoatation>("tbl_quoatation");
-
+            _audit = database.GetCollection<tbl_Audit>("tbl_Audit");
+            _dynamic = database.GetCollection<tbl_dynamic_audit_template>("tbl_dynamic_audit_template");
+            _icmedplus = database.GetCollection<tbl_ICMED_PLUS_Application>("tbl_ICMED_PLUS_Application");
 
         }
-
-        // Add methods for admin functionalities here
-        // For example, methods to manage users, roles, etc.
-        // Example method to get admin dashboard data
-
+        //new code
         public async Task<getDashboardResponse> GetAdminDashboard(getDashboardRequest request)
         {
             var response = new getDashboardResponse();
@@ -90,827 +92,1174 @@ namespace ZenithApp.ZenithRepository
             var userFkRole = (await _user.Find(x => x.Id == userId).FirstOrDefaultAsync())?.Fk_RoleID;
             var usertype = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
 
-            if (usertype?.Trim().ToLower() == "admin")
+            if (usertype?.Trim().ToLower() != "admin")
             {
-                try
-                {
-                    if (string.IsNullOrEmpty(userId))
-                    {
-                        response.Message = "Session expired or invalid user.";
-                        response.Success = false;
-                        response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
-                        response.ResponseCode = 1;
-                        return response;
-                    }
-
-                    var dashboardList = new List<CustomerDashboardData>();
-
-                    // Step 1 — Prepare default application filter (no status filter here)
-                    var applicationFilter = Builders<tbl_customer_application>.Filter.And(
-                        Builders<tbl_customer_application>.Filter.Eq(x => x.IsDelete, false),
-                        Builders<tbl_customer_application>.Filter.Eq(x => x.IsFinalSubmit, true)
-                    );
-
-                    // Step 2 — Fetch all applications
-                    var applications = await _customer.Find(applicationFilter).ToListAsync();
-
-                    // Step 3 — Optional: Find status record once if flag is provided
-                    tbl_Status? statusRecord = null;
-                    bool filterByStatus = false;
-
-                    if (!string.IsNullOrWhiteSpace(request.Flag))
-                    {
-                        statusRecord = await _status
-                            .Find(x => x.StatusName.ToLower() == request.Flag.Trim().ToLower())
-                            .FirstOrDefaultAsync();
-
-                        if (statusRecord == null)
-                        {
-                            return new getDashboardResponse
-                            {
-                                Success = true,
-                                Message = "No records found for given status.",
-                                Data = new List<CustomerDashboardData>(),
-                                HttpStatusCode = System.Net.HttpStatusCode.OK
-                            };
-                        }
-
-                        filterByStatus = true;
-                    }
-
-                    // Step 4 — Loop over each application and its certificates
-                    foreach (var app in applications)
-                    {
-                        var certificates = await _customercertificates
-                            .Find(x => x.Fk_Customer_Application == app.Id && x.Is_Delete == false)
-                            .ToListAsync();
-
-                        foreach (var cert in certificates)
-                        {
-                            // Apply status filter at certificate level only if a flag was provided
-                            if (filterByStatus && cert.status != statusRecord.Id)
-                            {
-                                continue; // Skip this certificate
-                            }
-
-                            var masterCert = await _masterCertificate
-                                .Find(x => x.Id == cert.Fk_Certificates)
-                                .FirstOrDefaultAsync();
-
-
-                            var statusDoc = await _status
-                               .Find(x => x.Id == cert.status)
-                               .FirstOrDefaultAsync();
-
-                            string nameStatus = statusDoc?.StatusName; // null if not found
-
-
-
-
-                            if (masterCert != null)
-                            {
-                                var assignedUser = !string.IsNullOrWhiteSpace(cert.AssignTo)
-                                    ? await _user.Find(x => x.Id == cert.AssignTo && x.IsDelete == 0)
-                                        .FirstOrDefaultAsync()
-                                    : null;
-
-
-                                var isoFilter = Builders<tbl_ISO_Application>.Filter.And(
-                                                Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, cert.Id),
-                                                Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, masterCert.Id)
-                                            );
-
-                                var isoApplication = await _iso.Find(isoFilter).FirstOrDefaultAsync();
-
-
-                                var dashboardRecord = new CustomerDashboardData
-                                {
-                                    Id = cert.Id,
-                                    ApplicationId = cert.Id,
-                                    ApplicationName  =app.ApplicationId,
-                                    ReceiveDate = app.SubmitDate,
-                                    IsFinal=app.IsFinalSubmit,
-                                    CompanyName = app.Orgnization_Name,
-                                    Certification_Name = masterCert.Certificate_Name,
-                                    Certification_Id = masterCert.Id,
-                                    TargetDate = cert.TargetDate,
-                                    //Status = isoApplication != null
-                                    //        ? (await _status.Find(x => x.Id == isoApplication.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending"
-                                    //        : (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
-                                    Status = nameStatus,
-                                    AssignedUserName = assignedUser?.FullName,
-                                };
-
-                                dashboardList.Add(dashboardRecord);
-                            }
-                        }
-                    }
-
-                    // Step 5 — Search filter (optional)
-                    if (!string.IsNullOrWhiteSpace(request.SearchTerm))
-                    {
-                        var searchTerm = request.SearchTerm.Trim().ToLower();
-                        dashboardList = dashboardList
-                            .Where(x =>
-                                (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
-                                (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
-                            )
-                            .ToList();
-                    }
-
-                    // Step 6 — Pagination
-                    // Sort by ReceiveDate descending before pagination
-                    dashboardList = dashboardList
-                        .OrderByDescending(x => x.ReceiveDate)
-                        .ToList();
-
-                    var totalCount = dashboardList.Count;
-                    var skip = (request.PageNumber - 1) * request.PageSize;
-
-                    var paginatedList = dashboardList
-                        .Skip(skip)
-                        .Take(request.PageSize)
-                        .ToList();
-
-
-                    var pagination = new PageinationDto
-                    {
-                        PageNumber = request.PageNumber,
-                        PageSize = request.PageSize,
-                        TotalRecords = totalCount
-                    };
-                   
-
-                    var applications1 = await _customer.Find(applicationFilter).ToListAsync();
-
-                    // Step 2: get all application Ids
-                    var appIds = applications.Select(a => a.Id).ToList();
-
-                    // Step 3: count certificates linked to those applications
-                    var certFilter = Builders<tbl_customer_certificates>.Filter.And(
-                        Builders<tbl_customer_certificates>.Filter.In(x => x.Fk_Customer_Application, appIds),
-                        Builders<tbl_customer_certificates>.Filter.Eq(x => x.Is_Delete, false)
-                    );
-
-                    var totalApplications = await _customercertificates.CountDocumentsAsync(certFilter);
-
-                    var totalQuotations = await _quoatation.CountDocumentsAsync(FilterDefinition<tbl_quoatation>.Empty);
-
-
-                    var pannelData = new PannelDto
-                    {
-                        totalApplication = (int)totalApplications,
-                        totalQuotation = (int)totalQuotations,
-                        totalAuditFile =0,
-                        other = 0
-                    };
-
-
-                    // Step 7 — Final response
-                    response.Data = paginatedList;
-                    response.Pagination = pagination;
-                    response.Pannale = pannelData;
-                    response.Message = "Dashboard Data fetched successfully.";
-                    response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                    response.Success = true;
-                    response.ResponseCode = 0;
-
-                }
-                catch (Exception ex)
-                {
-                    response.Message = "GetCustomerDashboard Exception: " + ex.Message;
-                    response.Success = false;
-                    response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
-                    response.ResponseCode = 1;
-                }
-            }
-            else
-            {
-                response.Message = "Invalid Token.";
+                response.Message = "Invalid token or user role.";
                 response.Success = false;
-                response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                response.HttpStatusCode = System.Net.HttpStatusCode.Forbidden;
+                response.ResponseCode = 1;
+                return response;
+            }
+
+            try
+            {
+                if (string.IsNullOrEmpty(userId))
+                {
+                    response.Message = "Session expired or invalid user.";
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+
+                var dashboardList = new List<CustomerDashboardData>();
+
+                // 🔹 Step 1: Filter for submitted applications
+                var applicationFilter = Builders<tbl_customer_application>.Filter.And(
+                    Builders<tbl_customer_application>.Filter.Eq(x => x.IsDelete, false),
+                    Builders<tbl_customer_application>.Filter.Eq(x => x.IsFinalSubmit, true)
+                );
+
+                // 🔹 Step 2: Get applications
+                var applications = await _customer.Find(applicationFilter).ToListAsync();
+
+                // 🔹 Step 3: Handle status filter (optional)
+                tbl_Status? statusRecord = null;
+                bool filterByStatus = false;
+
+                if (!string.IsNullOrWhiteSpace(request.Flag))
+                {
+                    statusRecord = await _status
+                        .Find(x => x.StatusName.ToLower() == request.Flag.Trim().ToLower())
+                        .FirstOrDefaultAsync();
+
+                    if (statusRecord == null)
+                    {
+                        return new getDashboardResponse
+                        {
+                            Success = true,
+                            Message = "No records found for given status.",
+                            Data = new List<CustomerDashboardData>(),
+                            HttpStatusCode = System.Net.HttpStatusCode.OK
+                        };
+                    }
+
+                    filterByStatus = true;
+                }
+
+                // 🔹 Step 4: Loop through applications and flatten certificates
+                foreach (var app in applications)
+                {
+                    if (app.Fk_ApplicationCertificates == null || !app.Fk_ApplicationCertificates.Any())
+                        continue;
+
+                    foreach (var cert in app.Fk_ApplicationCertificates)
+                    {
+                        // Apply optional status filter
+                        if (filterByStatus && cert.CertificationType != statusRecord?.StatusName)
+                            continue;
+
+
+                        // 🔹 Resolve Assigned Users (Null Safe)
+                        string reviewerName = null;
+                        string traineeName = null;
+
+                        if (cert?.AssignTo != null && cert.AssignTo.Any())
+                        {
+                            var reviewer = cert.AssignTo
+                                .FirstOrDefault(a => a?.Role != null && a.Role.Equals("Reviewer", StringComparison.OrdinalIgnoreCase));
+
+                            var trainee = cert.AssignTo
+                                .FirstOrDefault(a => a?.Role != null && a.Role.Equals("Trainee", StringComparison.OrdinalIgnoreCase));
+
+                            if (reviewer?.UserId != null)
+                            {
+                                var reviewerUser = await _user.Find(x => x.Id == reviewer.UserId).FirstOrDefaultAsync();
+                                reviewerName = reviewerUser?.FullName; // use FullName only
+                            }
+
+                            if (trainee?.UserId != null)
+                            {
+                                var traineeUser = await _user.Find(x => x.Id == trainee.UserId).FirstOrDefaultAsync();
+                                traineeName = traineeUser?.FullName; // use FullName only
+                            }
+                        }
+                        // Safely fetch status name
+                        string statusName = "Pending";
+                        if (!string.IsNullOrEmpty(cert.Status))
+                        {
+                            var statusDoc = await _status.Find(x => x.Id == cert.Status).FirstOrDefaultAsync();
+                            if (statusDoc != null && !string.IsNullOrEmpty(statusDoc.StatusName))
+                                statusName = statusDoc.StatusName;
+                        }
+
+
+                        var dashboardRecord = new CustomerDashboardData
+                        {
+                            ApplicationId = app.Id,
+                            sub_applicationId = cert.Id,
+                            ApplicationName = app.ApplicationName,
+                            ReceiveDate = app.SubmitDate,
+                            IsFinal = app.IsFinalSubmit,
+                            CompanyName = app.Orgnization_Name,
+                            Certification_Name = cert.Certificate_Name,
+                            Certification_Id = cert.Id,
+                            Status = statusName,
+                            TargetDate = cert.TargetDate, // can map if you add one in future
+                            TraineeName = traineeName, // add if you assign users later
+                            ReviewerName = reviewerName,
+                            totalComments = 0 // will fill later
+                        };
+
+                        dashboardList.Add(dashboardRecord);
+                    }
+                }
+
+                // 🔹 Step 5: Optional search filter
+                if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                {
+                    var searchTerm = request.SearchTerm.Trim().ToLower();
+                    dashboardList = dashboardList
+                        .Where(x =>
+                            (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+                            (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+                        )
+                        .ToList();
+                }
+
+                // 🔹 Step 6: Sort & Pagination
+                dashboardList = dashboardList.OrderByDescending(x => x.ReceiveDate).ToList();
+
+                var totalCount = dashboardList.Count;
+                var skip = (request.PageNumber - 1) * request.PageSize;
+
+                var paginatedList = dashboardList
+                    .Skip(skip)
+                    .Take(request.PageSize)
+                    .ToList();
+
+                var pagination = new PageinationDto
+                {
+                    PageNumber = request.PageNumber,
+                    PageSize = request.PageSize,
+                    TotalRecords = totalCount
+                };
+
+                // 🔹 Step 7: Comment count logic
+                foreach (var app in paginatedList)
+                {
+                    var filter = Builders<tbl_ApplicationFieldComment>.Filter.And(
+                        Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.ApplicationId, app.Id),
+                        Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, app.ApplicationName),
+                        Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.isResolved, false)
+                    );
+
+                    var commentList = await _comments
+                        .Find(filter)
+                        .SortByDescending(c => c.CreatedOn)
+                        .ToListAsync();
+
+                    var latestUniqueComments = commentList
+                        .GroupBy(c => c.FieldName)
+                        .Select(g => g.First())
+                        .ToList();
+
+                    app.totalComments = latestUniqueComments.Count;
+                }
+
+                // 🔹 Step 8: Panel counts (Applications / Quotations / Audits)
+                var totalApplications = applications.Count;
+                var totalQuotations = await _quoatation.CountDocumentsAsync(FilterDefinition<tbl_quoatation>.Empty);
+                var totalAudit = await _audit.CountDocumentsAsync(FilterDefinition<tbl_Audit>.Empty);
+
+                var panelData = new PannelDto
+                {
+                    totalApplication = totalApplications,
+                    totalQuotation = (int)totalQuotations,
+                    totalAuditFile = (int)totalAudit,
+                    other = 0
+                };
+
+                // 🔹 Step 9: Response
+                response.Data = paginatedList;
+                response.Pagination = pagination;
+                response.Pannale = panelData;
+                response.Message = "Dashboard Data fetched successfully.";
+                response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                response.Success = true;
+                response.ResponseCode = 0;
+            }
+            catch (Exception ex)
+            {
+                response.Message = "GetAdminDashboard Exception: " + ex.Message;
+                response.Success = false;
+                response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
                 response.ResponseCode = 1;
             }
 
             return response;
+        }
+
+        //end new code
+
+
+
+        //public async Task<getDashboardResponse> GetAdminDashboard(getDashboardRequest request)
+        //{
+        //    var response = new getDashboardResponse();
+
+        //    var userId = _acc.HttpContext?.Session.GetString("UserId");
+        //    var userFkRole = (await _user.Find(x => x.Id == userId).FirstOrDefaultAsync())?.Fk_RoleID;
+        //    var usertype = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+
+        //    if (usertype?.Trim().ToLower() == "admin")
+        //    {
+        //        try
+        //        {
+        //            if (string.IsNullOrEmpty(userId))
+        //            {
+        //                response.Message = "Session expired or invalid user.";
+        //                response.Success = false;
+        //                response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+        //                response.ResponseCode = 1;
+        //                return response;
+        //            }
+
+        //            var dashboardList = new List<CustomerDashboardData>();
+
+        //            // Step 1 — Prepare default application filter (no status filter here)
+        //            var applicationFilter = Builders<tbl_customer_application>.Filter.And(
+        //                Builders<tbl_customer_application>.Filter.Eq(x => x.IsDelete, false),
+        //                Builders<tbl_customer_application>.Filter.Eq(x => x.IsFinalSubmit, true)
+        //            );
+
+        //            // Step 2 — Fetch all applications
+        //            var applications = await _customer.Find(applicationFilter).ToListAsync();
+
+        //            // Step 3 — Optional: Find status record once if flag is provided
+        //            tbl_Status? statusRecord = null;
+        //            bool filterByStatus = false;
+
+        //            if (!string.IsNullOrWhiteSpace(request.Flag))
+        //            {
+        //                statusRecord = await _status
+        //                    .Find(x => x.StatusName.ToLower() == request.Flag.Trim().ToLower())
+        //                    .FirstOrDefaultAsync();
+
+        //                if (statusRecord == null)
+        //                {
+        //                    return new getDashboardResponse
+        //                    {
+        //                        Success = true,
+        //                        Message = "No records found for given status.",
+        //                        Data = new List<CustomerDashboardData>(),
+        //                        HttpStatusCode = System.Net.HttpStatusCode.OK
+        //                    };
+        //                }
+
+        //                filterByStatus = true;
+        //            }
+
+        //            // Step 4 — Loop over each application and its certificates
+        //            foreach (var app in applications)
+        //            {
+        //                var certificates = await _customercertificates
+        //                    .Find(x => x.Fk_Customer_Application == app.Id && x.Is_Delete == false)
+        //                    .ToListAsync();
+
+        //                foreach (var cert in certificates)
+        //                {
+        //                    // Apply status filter at certificate level only if a flag was provided
+        //                    if (filterByStatus && cert.status != statusRecord.Id)
+        //                    {
+        //                        continue; // Skip this certificate
+        //                    }
+
+        //                    var masterCert = await _masterCertificate
+        //                        .Find(x => x.Id == cert.Fk_Certificates)
+        //                        .FirstOrDefaultAsync();
+
+
+        //                    var statusDoc = await _status
+        //                       .Find(x => x.Id == cert.status)
+        //                       .FirstOrDefaultAsync();
+
+        //                    string nameStatus = statusDoc?.StatusName; // null if not found
+
+
+
+
+        //                    if (masterCert != null)
+        //                    {
+        //                        //var assignedUser = !string.IsNullOrWhiteSpace(cert.AssignTo)
+        //                        //    ? await _user.Find(x => x.Id == cert.AssignTo && x.IsDelete == 0)
+        //                        //        .FirstOrDefaultAsync()
+        //                        //    : null;
+        //                        var subApplicationId = "";
+        //                        var certificatetype = masterCert.Certificate_Name.Trim().ToUpper();
+
+        //                        if (certificatetype == "ISO")
+        //                        {
+        //                            subApplicationId = (await _iso
+        //                                .Find(x => x.Fk_Certificate == masterCert.Id && x.ApplicationId == cert.Id)
+        //                                .FirstOrDefaultAsync())?.Id;
+        //                        }
+        //                        else if (certificatetype == "FSSC")
+        //                        {
+        //                            subApplicationId = (await _fssc
+        //                                .Find(x => x.Fk_Certificate == masterCert.Id && x.ApplicationId == cert.Id)
+        //                                .FirstOrDefaultAsync())?.Id;
+        //                        }
+        //                        else if (certificatetype == "ICMED")
+        //                        {
+        //                            subApplicationId = (await _icmed
+        //                                .Find(x => x.Fk_Certificate == masterCert.Id && x.ApplicationId == cert.Id)
+        //                                .FirstOrDefaultAsync())?.Id;
+        //                        }
+        //                        else if (certificatetype == "IMDR")
+        //                        {
+        //                            subApplicationId = (await _imdr
+        //                                .Find(x => x.Fk_Certificate == masterCert.Id && x.ApplicationId == cert.Id)
+        //                                .FirstOrDefaultAsync())?.Id;
+        //                        }
+
+
+        //                        string traineeName = null;
+        //                        string reviewerName = null;
+
+        //                        if (cert.AssignTo != null && cert.AssignTo.Any())
+        //                        {
+        //                            // Get all user IDs from AssignTo
+        //                            var userIds = cert.AssignTo.Select(a => a.UserId).ToList();
+
+        //                            // Fetch users from DB
+        //                            var assignedUsers = await _user
+        //                                .Find(x => userIds.Contains(x.Id) && x.IsDelete == 0)
+        //                                .ToListAsync();
+
+        //                            // Match names based on role
+        //                            foreach (var assign in cert.AssignTo)
+        //                            {
+        //                                var user = assignedUsers.FirstOrDefault(u => u.Id == assign.UserId);
+        //                                if (user != null)
+        //                                {
+        //                                    if (assign.Role.Equals("Trainee", StringComparison.OrdinalIgnoreCase))
+        //                                        traineeName = user.FullName;
+
+        //                                    else if (assign.Role.Equals("Reviewer", StringComparison.OrdinalIgnoreCase))
+        //                                        reviewerName = user.FullName;
+        //                                }
+        //                            }
+        //                        }
+
+
+
+        //                        var isoFilter = Builders<tbl_ISO_Application>.Filter.And(
+        //                                        Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, cert.Id),
+        //                                        Builders<tbl_ISO_Application>.Filter.Eq(x => x.Fk_Certificate, masterCert.Id)
+        //                                    );
+
+        //                        var isoApplication = await _iso.Find(isoFilter).FirstOrDefaultAsync();
+
+
+        //                        var dashboardRecord = new CustomerDashboardData
+        //                        {
+        //                            Id = cert.Id,
+        //                            ApplicationId = cert.Id,
+        //                            sub_applicationId = subApplicationId,
+        //                            ApplicationName  =app.ApplicationId,
+        //                            ReceiveDate = app.SubmitDate,
+        //                            IsFinal=app.IsFinalSubmit,
+        //                            CompanyName = app.Orgnization_Name,
+        //                            Certification_Name = masterCert.Certificate_Name,
+        //                            Certification_Id = masterCert.Id,
+        //                            TargetDate = cert.TargetDate,
+        //                            //Status = isoApplication != null
+        //                            //        ? (await _status.Find(x => x.Id == isoApplication.Status).FirstOrDefaultAsync())?.StatusName ?? "Pending"
+        //                            //        : (await _status.Find(x => x.Id == cert.status).FirstOrDefaultAsync())?.StatusName ?? "Pending",
+        //                            Status = nameStatus,
+        //                            //AssignedUserName = string.Join(", ", assignedUserNames),
+        //                            TraineeName = traineeName,
+        //                            ReviewerName = reviewerName
+        //                        };
+
+        //                        dashboardList.Add(dashboardRecord);
+        //                    }
+        //                }
+        //            }
+
+        //            // Step 5 — Search filter (optional)
+        //            if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+        //            {
+        //                var searchTerm = request.SearchTerm.Trim().ToLower();
+        //                dashboardList = dashboardList
+        //                    .Where(x =>
+        //                        (!string.IsNullOrEmpty(x.ApplicationId) && x.ApplicationId.ToLower().Contains(searchTerm)) ||
+        //                        (!string.IsNullOrEmpty(x.Certification_Name) && x.Certification_Name.ToLower().Contains(searchTerm))
+        //                    )
+        //                    .ToList();
+        //            }
+
+        //            // Step 6 — Pagination
+        //            // Sort by ReceiveDate descending before pagination
+        //            dashboardList = dashboardList
+        //                .OrderByDescending(x => x.ReceiveDate)
+        //                .ToList();
+        //            foreach (var app in dashboardList)
+        //            {
+        //                // ---- Step 1: Build filter for current application ----
+        //                var certId = app.Certification_Id; // adjust this property name as per your model
+
+        //                var filter = Builders<tbl_ApplicationFieldComment>.Filter.And(
+        //                    Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.ApplicationId, app.ApplicationId),
+        //                    Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.CertificationName, certId),
+        //                    Builders<tbl_ApplicationFieldComment>.Filter.Eq(c => c.isResolved, false)
+        //                );
+
+        //                // ---- Step 2: Fetch comments for this application ----
+        //                var commentList = await _comments
+        //                    .Find(filter)
+        //                    .SortByDescending(c => c.CreatedOn) // latest first
+        //                    .ToListAsync();
+
+        //                // ---- Step 3: Group by FieldName and take latest only ----
+        //                var latestUniqueComments = commentList
+        //                    .GroupBy(c => c.FieldName)
+        //                    .Select(g => g.First()) // latest due to sorting
+        //                    .ToList();
+
+        //                // ---- Step 4: Count only the unique unresolved ones ----
+        //                var commentCount = latestUniqueComments.Count;
+
+        //                // Add it to your dashboard object
+        //                app.totalComments = (int)commentCount;
+        //            }
+        //            var totalCount = dashboardList.Count;
+        //            var skip = (request.PageNumber - 1) * request.PageSize;
+
+        //            var paginatedList = dashboardList
+        //                .Skip(skip)
+        //                .Take(request.PageSize)
+        //                .ToList();
+
+
+        //            var pagination = new PageinationDto
+        //            {
+        //                PageNumber = request.PageNumber,
+        //                PageSize = request.PageSize,
+        //                TotalRecords = totalCount
+        //            };
+
+
+        //            var applications1 = await _customer.Find(applicationFilter).ToListAsync();
+
+        //            // Step 2: get all application Ids
+        //            var appIds = applications.Select(a => a.Id).ToList();
+
+        //            // Step 3: count certificates linked to those applications
+        //            var certFilter = Builders<tbl_customer_certificates>.Filter.And(
+        //                Builders<tbl_customer_certificates>.Filter.In(x => x.Fk_Customer_Application, appIds),
+        //                Builders<tbl_customer_certificates>.Filter.Eq(x => x.Is_Delete, false)
+        //            );
+
+        //            var totalApplications = await _customercertificates.CountDocumentsAsync(certFilter);
+
+        //            var totalQuotations = await _quoatation.CountDocumentsAsync(FilterDefinition<tbl_quoatation>.Empty);
+        //            var totalAudit = await _audit.CountDocumentsAsync(FilterDefinition<tbl_Audit>.Empty);
+
+
+        //            var pannelData = new PannelDto
+        //            {
+        //                totalApplication = (int)totalApplications,
+        //                totalQuotation = (int)totalQuotations,
+        //                totalAuditFile = (int)totalAudit,
+        //                other = 0
+        //            };
+
+
+        //            // Step 7 — Final response
+        //            response.Data = paginatedList;
+        //            response.Pagination = pagination;
+        //            response.Pannale = pannelData;
+        //            response.Message = "Dashboard Data fetched successfully.";
+        //            response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+        //            response.Success = true;
+        //            response.ResponseCode = 0;
+
+        //        }
+        //        catch (Exception ex)
+        //        {
+        //            response.Message = "GetCustomerDashboard Exception: " + ex.Message;
+        //            response.Success = false;
+        //            response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+        //            response.ResponseCode = 1;
+        //        }
+        //    }
+        //    else
+        //    {
+        //        response.Message = "Invalid Token.";
+        //        response.Success = false;
+        //        response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+        //        response.ResponseCode = 1;
+        //    }
+
+        //    return response;
+        //}
+        public class AssignedUser
+        {
+            [BsonRepresentation(BsonType.ObjectId)]
+            public string UserId { get; set; }
+            public string Role { get; set; } // e.g. "Trainee", "Reviewer"
         }
 
         public async Task<assignUserResponse> AssignApplication(assignUserRequest request)
         {
             var response = new assignUserResponse();
-
             var userId = _acc.HttpContext?.Session.GetString("UserId");
-            var userFkRole = (await _user.Find(x => x.Id == userId).FirstOrDefaultAsync())?.Fk_RoleID;
-            var usertype = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
 
-            if (usertype?.Trim().ToLower() == "admin")
+            try
             {
-                try
-                { 
-                    if (!string.IsNullOrWhiteSpace(request.TrineeId) && !string.IsNullOrWhiteSpace(request.ReviewerId) &&!string.IsNullOrWhiteSpace(request.ApplicationId))
-                    {
-                        var application = await _customercertificates.Find(x => x.Id == request.ApplicationId).FirstOrDefaultAsync();
-                        var customerapp = await _customer.Find(x => x.Id == application.Fk_Customer_Application).FirstOrDefaultAsync();
-                        if (application != null)
-                        {
-                            application.AssignTo = request.ReviewerId;
-                            application.UpdatedAt = DateTime.Now; // Update the timestamp
-                            application.UpdatedBy = userId; // Set the user who updated
-                            application.TargetDate = request.targetDate; // Set the user who updated
-                            var status = await _status.Find(x => x.StatusName == "InProgress" && x.IsDelete == false).FirstOrDefaultAsync();
-                            if (status != null)
-                            {
-                                application.status = "68835335b8054bb3d2914cae";
-                            }
-                            await _customercertificates.ReplaceOneAsync(x => x.Id == request.ApplicationId, application);
-                            if (request.Certification_Id != null)
-                            {
-                                var masterCert = await _masterCertificate
-                                .Find(x => x.Id == request.Certification_Id)
-                                .FirstOrDefaultAsync();
-
-                                // Assuming _customerSite is your MongoDB Collection of tbl_customer_site
-
-                                var siteList = await _customersite
-                                    .Find(x => x.Fk_Customer_Application == customerapp.Id && x.Is_Delete == false)
-                                    .ToListAsync();
-
-                                var customerSiteDetailsList = siteList.Select(site => new ReviewerSiteDetails
-                                {
-                                    Customer_SiteId = site.Id,
-                                    Address = site.Address,
-                                    Telephone = site.Telephone,
-                                    Web = site.Web,
-                                    Email = site.Email,
-                                    Activity_Department = site.Activity_Department,
-                                    Manpower = site.Manpower,
-                                    Shift_Name = site.Shift_Name
-                                }).ToList();
-
-                                var keyPersonnelsData = await _customerKeyPersonnel
-                                    .Find(x => x.Fk_Customer_Application == customerapp.Id && x.Is_Delete == false)
-                                    .ToListAsync();
-                                var keyPersonnelsList = keyPersonnelsData.Select(kp => new KeyPersonnelList
-                                {
-                                    customerKeyPersonnelId = kp.Id,
-                                    Name = kp.FullName,
-                                    Designation = kp.Department,
-                                    EmailId = kp.EmailId,
-                                    Contact_No = string.IsNullOrEmpty(kp.Contact_No) ? kp.Contact : kp.Contact_No,  // pick available field
-                                    Type = kp.TypeOfPersonnel
-                                }).ToList();
-
-
-                                var reviewerkeyPersonnelsList = keyPersonnelsData.Select(kp => new ReviewerKeyPersonnelList
-                                {
-                                    ActivityName = kp.Department,
-                                    PersonnelByClient = keyPersonnelsList.Count(p => p.Designation == kp.Department).ToString(), // count matching department
-                                    EffectivePersonnel = "",
-                                    Comment = "",
-                                    AdditionalComments = "", // pick available field
-                                    Fk_site = null
-                                }).ToList();
-
-
-                                var reviewerAuditMandaysData = await _reviewerAuditManDays
-                                    .Find(x => x.Fk_ApplicationId == request.ApplicationId)
-                                    .ToListAsync();
-
-
-                                var mandaysList = reviewerAuditMandaysData.Select(x => new ReviewerAuditMandaysList
-                                {
-                                    ActivityName = x.ActivityName,
-                                    Audit_ManDays = x.Man_Days,
-                                    Additional_ManDays = x.Additional_Mandays,
-                                    OnSite_Stage1_ManDays = x.OnSite_manDays_Stage_1,
-                                    OnSite_Stage2_ManDays = x.OnSite_manDays_Stage_2,
-                                    OffSite_Stage1_ManDays = x.OfSite_manDays_Stage_1,
-                                    OffSite_Stage2_ManDays = x.OfSite_manDays_Stage_2,
-                                    Recertification_OnSite_ManDays = 0,        // You can map if you have this field elsewhere
-                                    Recertification_OffSite_ManDays = 0,      // Same here
-                                    AdditionalComments = x.Comment,
-                                    
-                                    Note = x.Note
-                                }).ToList();
-
-
-                                switch (masterCert.Certificate_Name)
-                                {
-                                    case "ISO":
-
-                                        await _isoApplication.InsertOneAsync(new tbl_ISO_Application
-                                        {
-                                            ApplicationId = request.ApplicationId,
-                                            ApplicationName=customerapp.ApplicationId,
-                                            Application_Received_date = DateTime.Now,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviwerTwo",
-                                            Orgnization_Name = customerapp.Orgnization_Name,
-                                            Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
-                                            Fk_Certificate = application.Fk_Certificates,
-                                            AssignTo = request.ReviewerId,
-                                            TargetDate =request.targetDate,
-                                            Audit_Type = "",  // Set based on logic or request
-                                            Scop_of_Certification = "",
-                                            Technical_Areas = new List<TechnicalAreasList>(),
-                                            Accreditations = new List<AccreditationsList>(),
-                                            Availbility_of_TechnicalAreas = false,
-                                            Availbility_of_Auditor = false,
-                                            Audit_Lang = "",
-                                            IsInterpreter = false,
-                                            IsMultisitesampling = false,
-                                            Total_site = customerSiteDetailsList?.Count ?? 0,  // <-- Set site count
-
-                                            Sample_Site = new List<LabelValue>(),   // If required, fill here
-                                            Shift_Details = new List<LabelValue>(), // If required, fill here
-
-                                            CustomerSites = customerSiteDetailsList,
-                                            KeyPersonnels = keyPersonnelsList,
-                                            MandaysLists = mandaysList,
-                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
-                                            CreatedAt = DateTime.Now,
-                                            CreatedBy = userId,
-                                            Status = status.Id,
-                                            Application_Status = status.Id,
-                                            IsDelete = false,
-                                            IsFinalSubmit = false,
-                                            Fk_UserId = request.ReviewerId
-                                        });
-                                        if(!string.IsNullOrWhiteSpace(request.TrineeId))
-                                        {
-                                            await _isoApplication.InsertOneAsync(new tbl_ISO_Application
-                                            {
-                                                ApplicationId = request.ApplicationId,
-                                                ApplicationName = customerapp.ApplicationId,
-                                                CertiFicateName = masterCert.Certificate_Name,
-                                                Application_Received_date = DateTime.Now,
-                                                ActiveReviwer = request.ApplicationId ?? "ReviwerOne",
-                                                Orgnization_Name = customerapp.Orgnization_Name,
-                                                Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
-                                                Fk_Certificate = application.Fk_Certificates,
-                                                AssignTo = request.TrineeId,
-                                                Audit_Type = "",  // Set based on logic or request
-                                                Scop_of_Certification = "",
-                                                Technical_Areas = new List<TechnicalAreasList>(),
-                                                Accreditations = new List<AccreditationsList>(),
-                                                Availbility_of_TechnicalAreas = false,
-                                                Availbility_of_Auditor = false,
-                                                Audit_Lang = "",
-                                                IsInterpreter = false,
-                                                IsMultisitesampling = false,
-                                                Total_site = customerSiteDetailsList?.Count ?? 0,  // <-- Set site count
-                                                TargetDate=request.targetDate,
-                                                Sample_Site = new List<LabelValue>(),   // If required, fill here
-                                                Shift_Details = new List<LabelValue>(), // If required, fill here
-
-                                                CustomerSites = customerSiteDetailsList,
-                                                KeyPersonnels = keyPersonnelsList,
-                                                MandaysLists = mandaysList,
-                                                reviewerKeyPersonnel = reviewerkeyPersonnelsList,
-                                                CreatedAt = DateTime.Now,
-                                                CreatedBy = userId,
-                                                Status = status.Id,
-                                                Application_Status = status.Id,
-                                                IsDelete = false,
-                                                IsFinalSubmit = false,
-                                                Fk_UserId = request.TrineeId
-                                            });
-                                        }
-
-                                     break;
-
-                                    case "FSSC":
-
-                                        await _fssc.InsertOneAsync(new tbl_FSSC_Application
-                                        {
-                                            ApplicationId = request.ApplicationId,
-                                            Application_Received_date = DateTime.Now,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
-                                            ApplicationName = customerapp.ApplicationId,
-                                            Orgnization_Name = customerapp.Orgnization_Name,
-                                            Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
-
-                                            Fk_Certificate = application.Fk_Certificates,
-                                            AssignTo = request.ReviewerId,
-
-                                            Audit_Type = "",   // Set based on logic
-                                            Scop_of_Certification = "",
-
-                                            Availbility_of_TechnicalAreas = false,
-                                            Availbility_of_Auditor = false,
-                                            Audit_Lang = "",
-
-                                            IsInterpreter = false,
-                                            IsMultisitesampling = false,
-                                            Total_site = customerSiteDetailsList?.Count ?? 0,
-
-                                            Sample_Site = new List<LabelValue>(),
-                                            Shift_Details = new List<LabelValue>(),
-
-                                            Seasonality_Factor = null,
-                                            AnyAllergens = null,
-
-                                            CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
-                                            KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
-                                            MandaysLists = mandaysList ?? new List<ReviewerAuditMandaysList>(),
-                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
-
-                                            Technical_Areas = new List<TechnicalAreasList>(),
-                                            Accreditations = new List<AccreditationsList>(),
-                                            productCategoryAndSubs = new List<ProductCategoryAndSubCategoryList>(),
-                                            hACCPLists = new List<HACCPList>(),
-                                            standardsLists = new List<StandardsList>(),
-                                            categoryLists = new List<CategoryList>(),
-                                            subCategoryLists = new List<SubCategoryList>(),
-
-                                            ReviewerThreatList = new List<ReviewerThreatList>(),
-                                            ReviewerRemarkList = new List<ReviewerRemarkList>(),
-                                            TargetDate = request.targetDate,
-                                            CreatedAt = DateTime.Now,
-                                            CreatedBy = userId,
-                                            Status = status.Id,
-                                            IsDelete = false,
-                                            IsFinalSubmit = false,
-                                            Fk_UserId = request.ReviewerId
-                                        });
-                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
-                                        {
-                                            await _fssc.InsertOneAsync(new tbl_FSSC_Application
-                                            {
-                                                ApplicationId = request.ApplicationId,
-                                                Application_Received_date = DateTime.Now,
-                                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
-                                                ApplicationName = customerapp.ApplicationId,
-                                                Orgnization_Name = customerapp.Orgnization_Name,
-                                                Constituation_of_Orgnization = customerapp.Constituation_of_Orgnization,
-
-                                                Fk_Certificate = application.Fk_Certificates,
-                                                AssignTo = request.TrineeId,
-                                                TargetDate =request.targetDate,
-                                                Audit_Type = "",   // Set based on logic
-                                                Scop_of_Certification = "",
-
-                                                Availbility_of_TechnicalAreas = false,
-                                                Availbility_of_Auditor = false,
-                                                Audit_Lang = "",
-
-                                                IsInterpreter = false,
-                                                IsMultisitesampling = false,
-                                                Total_site = customerSiteDetailsList?.Count ?? 0,
-
-                                                Sample_Site = new List<LabelValue>(),
-                                                Shift_Details = new List<LabelValue>(),
-
-                                                Seasonality_Factor = null,
-                                                AnyAllergens = null,
-
-                                                CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
-                                                KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
-                                                MandaysLists = mandaysList ?? new List<ReviewerAuditMandaysList>(),
-                                                reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
-
-                                                Technical_Areas = new List<TechnicalAreasList>(),
-                                                Accreditations = new List<AccreditationsList>(),
-                                                productCategoryAndSubs = new List<ProductCategoryAndSubCategoryList>(),
-                                                hACCPLists = new List<HACCPList>(),
-                                                standardsLists = new List<StandardsList>(),
-                                                categoryLists = new List<CategoryList>(),
-                                                subCategoryLists = new List<SubCategoryList>(),
-
-                                                ReviewerThreatList = new List<ReviewerThreatList>(),
-                                                ReviewerRemarkList = new List<ReviewerRemarkList>(),
-
-                                                CreatedAt = DateTime.Now,
-                                                CreatedBy = userId,
-
-                                                Status = status.Id,
-                                                IsDelete = false,
-                                                IsFinalSubmit = false,
-                                                Fk_UserId = request.TrineeId
-                                            });
-                                        }
-
-                                    break;
-
-
-                                    case "ICMED":
-                                        var icmedApplication = new tbl_ICMED_Application
-                                        {
-                                            ApplicationId = request.ApplicationId,
-                                            Application_Received_date = DateTime.Now,
-                                            ApplicationName = customerapp.ApplicationId,
-                                            Orgnization_Name = customerapp.Orgnization_Name,
-                                            Fk_Certificate = application.Fk_Certificates,
-                                            Certification_Name = masterCert.Certificate_Name, // if you have it
-                                            Scop_of_Certification = "",  // set as per your logic or request
-                                            Audit_Type = "",             // set as per your logic
-                                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
-                                            remark = "",
-                                            Availbility_of_TechnicalAreas = false,
-                                            Availbility_of_Auditor = false,
-                                            Audit_Lang = "",
-                                            ActiveState = 1,
-                                            IsInterpreter = false,
-                                            IsMultisitesampling = false,
-                                            Total_site = customerSiteDetailsList?.Count ?? 0,
-                                            TargetDate = request.targetDate,
-                                            Sample_Site = new List<LabelValue>(),
-                                            Shift_Details = new List<LabelValue>(),
-
-                                            ApplicationReviewDate = null,
-                                            CreatedAt = DateTime.Now,
-                                            CreatedBy = userId,
-                                            Status = status.Id,
-                                            IsDelete = false,
-                                            IsFinalSubmit = false,
-                                            Fk_UserId = request.ReviewerId,
-                                            AssignTo = request.ReviewerId,
-                                            Technical_Areas = new List<TechnicalAreasList>(),
-                                            Accreditations = new List<AccreditationsList>(),
-                                            CustomerSites = customerSiteDetailsList,
-                                            KeyPersonnels = keyPersonnelsList,
-                                            MandaysLists = mandaysList,
-                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
-                                            ThreatLists = new List<ThreatList>(),
-                                            ReviewerThreatList = new List<ReviewerThreatList>(),
-                                            ReviewerRemarkList = new List<ReviewerRemarkList>()
-                                        };
-
-                                        await _icmed.InsertOneAsync(icmedApplication);
-
-                                        // If trainee is also assigned, create one more entry
-                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
-                                        {
-                                            var traineeIcmdApplication = new tbl_ICMED_Application
-                                            {
-                                                ApplicationId = request.ApplicationId,
-                                                Application_Received_date = DateTime.Now,
-                                                ApplicationName = customerapp.ApplicationId,
-                                                Orgnization_Name = customerapp.Orgnization_Name,
-                                                Fk_Certificate = application.Fk_Certificates,
-                                                Certification_Name = masterCert.Certificate_Name,
-                                                Scop_of_Certification = "",
-                                                Audit_Type = "",
-                                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
-                                                remark = "",
-                                                Availbility_of_TechnicalAreas = false,
-                                                Availbility_of_Auditor = false,
-                                                Audit_Lang = "",
-                                                ActiveState = 1,
-                                                IsInterpreter = false,
-                                                IsMultisitesampling = false,
-                                                Total_site = customerSiteDetailsList?.Count ?? 0,
-                                                TargetDate = request.targetDate,
-                                                Sample_Site = new List<LabelValue>(),
-                                                Shift_Details = new List<LabelValue>(),
-
-                                                ApplicationReviewDate = null,
-                                                CreatedAt = DateTime.Now,
-                                                CreatedBy = userId,
-                                                Status = status.Id,
-                                                IsDelete = false,
-                                                IsFinalSubmit = false,
-                                                Fk_UserId = request.TrineeId,
-                                                AssignTo = request.TrineeId,
-                                                Technical_Areas = new List<TechnicalAreasList>(),
-                                                Accreditations = new List<AccreditationsList>(),
-                                                CustomerSites = customerSiteDetailsList,
-                                                KeyPersonnels = keyPersonnelsList,
-                                                MandaysLists = mandaysList,
-                                                reviewerKeyPersonnel = reviewerkeyPersonnelsList,
-                                                ThreatLists = new List<ThreatList>(),
-                                                ReviewerThreatList = new List<ReviewerThreatList>(),
-                                                ReviewerRemarkList = new List<ReviewerRemarkList>()
-                                            };
-
-                                            await _icmed.InsertOneAsync(traineeIcmdApplication);
-                                        }
-
-                                        break;
-
-
-                                    case "ICMED_PLUS":
-
-                                        await _icmedplus.InsertOneAsync(new tbl_ICMED_PLUS_Application
-                                        {
-                                            ApplicationId = request.ApplicationId,
-                                            Application_Received_date = DateTime.Now,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
-                                            Orgnization_Name = customerapp.Orgnization_Name,
-                                            Fk_Certificate = application.Fk_Certificates,
-                                            Certification_Name = masterCert.Certificate_Name,
-                                            AssignTo = request.ReviewerId,
-                                            Fk_UserId = request.ReviewerId,
-                                            Audit_Type = "",  // fill if available
-                                            Scop_of_Certification = "",
-
-                                            Technical_Areas = new List<TechnicalAreasList>(),
-                                            Accreditations = new List<AccreditationsList>(),
-                                            Availbility_of_TechnicalAreas = false,
-                                            Availbility_of_Auditor = false,
-                                            Audit_Lang = "",
-                                            IsInterpreter = false,
-                                            IsMultisitesampling = false,
-                                            Total_site = customerSiteDetailsList?.Count ?? 0,
-
-                                            Sample_Site = new List<LabelValue>(),
-                                            Shift_Details = new List<LabelValue>(),
-
-                                            CustomerSites = customerSiteDetailsList,
-                                            KeyPersonnels = keyPersonnelsList,
-                                            MandaysLists = mandaysList,
-                                            reviewerKeyPersonnel = reviewerkeyPersonnelsList,
-                                            ThreatLists = new List<ThreatList>(),
-                                            ReviewerThreatList = new List<ReviewerThreatList>(),
-                                            ReviewerRemarkList = new List<ReviewerRemarkList>(),
-
-                                            CreatedAt = DateTime.Now,
-                                            CreatedBy = userId,
-                                            Status = status.Id,
-                                            IsDelete = false,
-                                            IsFinalSubmit = false
-                                        });
-
-                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
-                                        {
-                                            await _icmedplus.InsertOneAsync(new tbl_ICMED_PLUS_Application
-                                            {
-                                                ApplicationId = request.ApplicationId,
-                                                Application_Received_date = DateTime.Now,
-                                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
-                                                Orgnization_Name = customerapp.Orgnization_Name,
-                                                Fk_Certificate = application.Fk_Certificates,
-                                                Certification_Name = masterCert.Certificate_Name,
-                                                AssignTo = request.TrineeId,
-                                                Fk_UserId = request.TrineeId,
-                                                Audit_Type = "",  // fill if available
-                                                Scop_of_Certification = "",
-                                                Technical_Areas = new List<TechnicalAreasList>(),
-                                                Accreditations = new List<AccreditationsList>(),
-                                                Availbility_of_TechnicalAreas = false,
-                                                Availbility_of_Auditor = false,
-                                                Audit_Lang = "",
-                                                IsInterpreter = false,
-                                                IsMultisitesampling = false,
-                                                Total_site = customerSiteDetailsList?.Count ?? 0,
-                                                Sample_Site = new List<LabelValue>(),
-                                                Shift_Details = new List<LabelValue>(),
-                                                CustomerSites = customerSiteDetailsList,
-                                                KeyPersonnels = keyPersonnelsList,
-                                                MandaysLists = mandaysList,
-                                                reviewerKeyPersonnel = reviewerkeyPersonnelsList,
-                                                ThreatLists = new List<ThreatList>(),
-                                                ReviewerThreatList = new List<ReviewerThreatList>(),
-                                                ReviewerRemarkList = new List<ReviewerRemarkList>(),
-                                                CreatedAt = DateTime.Now,
-                                                CreatedBy = userId,
-                                                Status = status.Id,
-                                                IsDelete = false,
-                                                IsFinalSubmit = false
-                                            });
-                                        }
-
-                                     break;
-
-
-                                    case "IMDR":
-
-                                        // Insert Reviewer (main)
-                                        await _imdr.InsertOneAsync(new tbl_IMDR_Application
-                                        {
-                                            ApplicationId = request.ApplicationId,
-                                            ApplicationName = customerapp.ApplicationId,
-                                            Application_Received_date = DateTime.Now,
-                                            ActiveReviwer = request.ApplicationId ?? "ReviwerTwo",  // Default reviewer role
-                                            Orgnization_Name = customerapp.Orgnization_Name,
-                                            Fk_Certificate = application.Fk_Certificates,
-                                            AssignTo = request.ReviewerId,
-                                            TargetDate = request.targetDate,
-
-                                            // IMDR-specific fields
-                                            Scop_of_Certification = "",
-                                            DeviceMasterfile = "",
-                                            Technical_Areas = new List<TechnicalAreasList>(),
-                                            Availbility_of_TechnicalAreas = false,
-                                            Availbility_of_Auditor = false,
-                                            Audit_Lang = "",
-                                            IsInterpreter = false,
-
-                                            // Collections
-                                            CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
-                                            //KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
-                                            //imdrManDays = imdrMandaysList ?? new List<ImdrManDays>(),
-                                            //reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
-                                            //ReviewerThreatList = reviewerThreatLists ?? new List<ReviewerThreatList>(),
-                                            //ReviewerRemarkList = reviewerRemarkLists ?? new List<ReviewerRemarkList>(),
-                                            //mdrauditLists = mdrauditLists ?? new List<MDRAuditList>(),
-
-                                            // Meta
-                                            CreatedAt = DateTime.Now,
-                                            CreatedBy = userId,
-                                            Status = status.Id,
-                                            IsDelete = false,
-                                            IsFinalSubmit = false,
-                                            Fk_UserId = request.ReviewerId
-                                        });
-
-                                        // Insert Trainee (if present)
-                                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
-                                        {
-                                            await _imdr.InsertOneAsync(new tbl_IMDR_Application
-                                            {
-                                                ApplicationId = request.ApplicationId,
-                                                ApplicationName = customerapp.ApplicationId,
-                                                Application_Received_date = DateTime.Now,
-                                                ActiveReviwer = request.ApplicationId ?? "ReviwerOne",  // Default trainee role
-                                                Orgnization_Name = customerapp.Orgnization_Name,
-                                                Fk_Certificate = application.Fk_Certificates,
-                                                AssignTo = request.TrineeId,
-                                                TargetDate = request.targetDate,
-
-                                                // IMDR-specific fields
-                                                Scop_of_Certification = "",
-                                                DeviceMasterfile = "",
-                                                Technical_Areas = new List<TechnicalAreasList>(),
-                                                Availbility_of_TechnicalAreas = false,
-                                                Availbility_of_Auditor = false,
-                                                Audit_Lang = "",
-                                                IsInterpreter = false,
-
-                                                // Collections
-                                                CustomerSites = customerSiteDetailsList ?? new List<ReviewerSiteDetails>(),
-                                                KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
-                                                //imdrManDays = imdrMandaysList ?? new List<ImdrManDays>(),
-                                                //reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
-                                                //ReviewerThreatList = reviewerThreatLists ?? new List<ReviewerThreatList>(),
-                                                //ReviewerRemarkList = reviewerRemarkLists ?? new List<ReviewerRemarkList>(),
-                                                //mdrauditLists = mdrauditLists ?? new List<MDRAuditList>(),
-
-                                                // Meta
-                                                CreatedAt = DateTime.Now,
-                                                CreatedBy = userId,
-                                                Status = status.Id,
-                                                IsDelete = false,
-                                                IsFinalSubmit = false,
-                                                Fk_UserId = request.TrineeId
-                                            });
-                                        }
-
-                                        break;
-
-
-                                    default:
-                                        // Handle unknown certification if needed
-                                    break;
-
-                                }
-
-
-                            }
-
-
-                            response.Message = "Application assigned successfully.";
-                            response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                            response.Success = true;
-                            response.ResponseCode = 0;
-                        }
-                        else
-                        {
-                            response.Message = "Application not found.";
-                            response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
-                            response.Success = false;
-                            response.ResponseCode = 1;
-                        }
-                    }
-                    else if(!string.IsNullOrWhiteSpace(request.ReviewerId) && !string.IsNullOrWhiteSpace(request.ApplicationId))
-                    {
-
-                    } 
-                    else
-                    {
-                        response.Message = "Please Provide Correct  Application data.";
-                        response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
-                        response.Success = false;
-                        response.ResponseCode = 1;
-                    }
-                }
-                catch (Exception ex)
+                // 🔹 Validate Admin Role
+                var userFkRole = (await _user.Find(x => x.Id == userId).FirstOrDefaultAsync())?.Fk_RoleID;
+                var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
+
+                if (userType?.Trim().ToLower() != "admin")
                 {
-                    response.Message = "GetCustomerDashboard Exception: " + ex.Message;
+                    response.Message = "Invalid Token.";
                     response.Success = false;
-                    response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
                     response.ResponseCode = 1;
+                    return response;
                 }
+
+                // 🔹 Validate Inputs
+                if (string.IsNullOrWhiteSpace(request.ApplicationId) ||
+                    string.IsNullOrWhiteSpace(request.ReviewerId) ||
+                    string.IsNullOrWhiteSpace(request.Certification_Id))
+                {
+                    response.Message = "Please provide ApplicationId, Certification_Id and ReviewerId.";
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.BadRequest;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+
+                // 🔹 Find parent customer application
+                var customerApp = await _customer.Find(x => x.Id == request.ApplicationId && !x.IsDelete).FirstOrDefaultAsync();
+                if (customerApp == null)
+                {
+                    response.Message = "Customer application not found.";
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+
+                // 🔹 Find target certificate within Fk_ApplicationCertificates
+                var targetCert = customerApp.Fk_ApplicationCertificates?
+                    .FirstOrDefault(c => c.Id == request.Certification_Id);
+
+                if (targetCert == null)
+                {
+                    response.Message = "Certificate not found inside customer application.";
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+
+                // 🔹 Update sub-document (certificate) assignment metadata
+                var status = await _status.Find(x => x.StatusName == "InProgress").FirstOrDefaultAsync();
+                var statusId = status?.Id ?? "68835335b8054bb3d2914cae";
+
+                targetCert.AssignTo = new List<AssignedUser>
+                {
+                    new AssignedUser { UserId = request.ReviewerId, Role = "Reviewer" }
+                };
+                if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                    targetCert.AssignTo.Add(new AssignedUser { UserId = request.TrineeId, Role = "Trainee" });
+
+                targetCert.TargetDate = request.targetDate;
+                targetCert.Status = statusId;
+
+                // 🔹 Replace certificate in list
+                var certList = customerApp.Fk_ApplicationCertificates?.Select(c =>
+                    c.Id == request.Certification_Id ? targetCert : c).ToList();
+
+                // 🔹 Update database
+                var update = Builders<tbl_customer_application>.Update
+                    .Set(x => x.Fk_ApplicationCertificates, certList)
+                    .Set(x => x.UpdatedAt, DateTime.Now)
+                    .Set(x => x.UpdatedBy, userId);
+
+                await _customer.UpdateOneAsync(x => x.Id == customerApp.Id, update);
+
+                // 🔹 Prepare data for new certificate-specific table
+                var siteList = customerApp.Fk_Customer_Sites ?? new List<CustomerSite>();
+                var keyPersonnelList = customerApp.Fk_Key_Personnels ?? new List<KeyPersonnel>();
+                var mandayList = await _reviewerAuditManDays
+                    .Find(x => x.Fk_ApplicationId == request.ApplicationId)
+                    .ToListAsync();
+
+                var masterCert = await _masterCertificate
+                    .Find(x => x.Id == request.Certification_Id)
+                    .FirstOrDefaultAsync();
+
+                if (masterCert == null)
+                {
+                    response.Message = "Master certificate not found.";
+                    response.Success = false;
+                    response.HttpStatusCode = System.Net.HttpStatusCode.NotFound;
+                    response.ResponseCode = 1;
+                    return response;
+                }
+
+                // 🔹 Map shared lists
+                var reviewerSites = siteList.Select(s => new ReviewerSiteDetails
+                {
+                    Customer_SiteId = s.Id,
+                    Address = s.Address,
+                    Telephone = s.Telephone,
+                    Web = s.Web,
+                    Email = s.Email,
+                    Activity_Department = s.Activity_Department,
+                    Manpower = s.Manpower,
+                    Shift_Name = s.Shift_Name
+                }).ToList();
+
+                var reviewerKeyPersonnels = keyPersonnelList.Select(kp => new ReviewerKeyPersonnelList
+                {
+                    ActivityName = kp.Designation,
+                    PersonnelByClient = keyPersonnelList.Count(p => p.Designation == kp.Designation).ToString(),
+                    EffectivePersonnel = "",
+                    Comment = "",
+                    AdditionalComments = "",
+                    Fk_site = null
+                }).ToList();
+                var keyPersonnelsList = keyPersonnelList.Select(kp => new KeyPersonnelList
+                {
+                    customerKeyPersonnelId = kp.Id,
+                    Name = kp.Name,
+                    Designation = kp.Designation,
+                    EmailId = kp.EmailId,
+                    Contact_No = string.IsNullOrEmpty(kp.Contact_No) ? kp.Contact_No : kp.Contact_No,  // pick available field
+                    Type = kp.Type
+                }).ToList();
+
+                var reviewerMandays = mandayList.Select(x => new ReviewerAuditMandaysList
+                {
+                    ActivityName = x.ActivityName,
+                    Audit_ManDays = x.Man_Days,
+                    Additional_ManDays = x.Additional_Mandays,
+                    OnSite_Stage1_ManDays = x.OnSite_manDays_Stage_1,
+                    OnSite_Stage2_ManDays = x.OnSite_manDays_Stage_2,
+                    OffSite_Stage1_ManDays = x.OfSite_manDays_Stage_1,
+                    OffSite_Stage2_ManDays = x.OfSite_manDays_Stage_2,
+                    AdditionalComments = x.Comment,
+                    Note = x.Note
+                }).ToList();
+
+                switch (masterCert.Certificate_Name)
+                {
+                    case "ISO":
+
+                        await _isoApplication.InsertOneAsync(new tbl_ISO_Application
+                        {
+                            ApplicationId = request.ApplicationId,
+                            ApplicationName =customerApp.ApplicationId,
+                            Application_Received_date = DateTime.Now,
+                            CertiFicateName = masterCert.Certificate_Name,
+                            ActiveReviwer = request.ApplicationId ?? "ReviwerTwo",
+                            Orgnization_Name = customerApp.Orgnization_Name,
+                            Constituation_of_Orgnization = customerApp.Constituation_of_Orgnization,
+                            Fk_Certificate = request.Certification_Id,
+                            AssignTo = request.ReviewerId,
+                            TargetDate = request.targetDate,
+                            Audit_Type = "",  // Set based on logic or request
+                            Scop_of_Certification = "",
+                            Technical_Areas = new List<TechnicalAreasList>(),
+                            Accreditations = new List<AccreditationsList>(),
+                            Availbility_of_TechnicalAreas = false,
+                            Availbility_of_Auditor = false,
+                            Audit_Lang = "",
+                            IsInterpreter = false,
+                            IsMultisitesampling = false,
+                            Total_site = reviewerSites?.Count ?? 0,  // <-- Set site count
+
+                            Sample_Site = new List<LabelValue>(),   // If required, fill here
+                            Shift_Details = new List<LabelValue>(), // If required, fill here
+
+                            CustomerSites = reviewerSites,
+                            KeyPersonnels = keyPersonnelsList,
+                            MandaysLists = reviewerMandays,
+                            reviewerKeyPersonnel = reviewerKeyPersonnels,
+                            CreatedAt = DateTime.Now,
+                            CreatedBy = userId,
+                            Status = status.Id,
+                            Application_Status = status.Id,
+                            IsDelete = false,
+                            IsFinalSubmit = false,
+                            Fk_UserId = request.ReviewerId
+                        });
+                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                        {
+                            await _isoApplication.InsertOneAsync(new tbl_ISO_Application
+                            {
+                                ApplicationId = request.ApplicationId,
+                                ApplicationName = customerApp.ApplicationId,
+                                CertiFicateName = masterCert.Certificate_Name,
+                                Application_Received_date = DateTime.Now,
+                                ActiveReviwer = request.ApplicationId ?? "ReviwerOne",
+                                Orgnization_Name = customerApp.Orgnization_Name,
+                                Constituation_of_Orgnization = customerApp.Constituation_of_Orgnization,
+                                Fk_Certificate = request.Certification_Id,
+                                AssignTo = request.TrineeId,
+                                Audit_Type = "",  // Set based on logic or request
+                                Scop_of_Certification = "",
+                                Technical_Areas = new List<TechnicalAreasList>(),
+                                Accreditations = new List<AccreditationsList>(),
+                                Availbility_of_TechnicalAreas = false,
+                                Availbility_of_Auditor = false,
+                                Audit_Lang = "",
+                                IsInterpreter = false,
+                                IsMultisitesampling = false,
+                                Total_site = reviewerSites?.Count ?? 0,  // <-- Set site count
+                                TargetDate = request.targetDate,
+                                Sample_Site = new List<LabelValue>(),   // If required, fill here
+                                Shift_Details = new List<LabelValue>(), // If required, fill here
+
+                                CustomerSites = reviewerSites,
+                                KeyPersonnels = keyPersonnelsList,
+                                MandaysLists = reviewerMandays,
+                                reviewerKeyPersonnel = reviewerKeyPersonnels,
+                                CreatedAt = DateTime.Now,
+                                CreatedBy = userId,
+                                Status = status.Id,
+                                Application_Status = status.Id,
+                                IsDelete = false,
+                                IsFinalSubmit = false,
+                                Fk_UserId = request.TrineeId
+                            });
+                        }
+
+                        break;
+
+                    case "FSSC":
+
+                        await _fssc.InsertOneAsync(new tbl_FSSC_Application
+                        {
+                            ApplicationId = request.ApplicationId,
+                            Application_Received_date = DateTime.Now,
+                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
+                            ApplicationName = customerApp.ApplicationId,
+                            Orgnization_Name = customerApp.Orgnization_Name,
+                            Constituation_of_Orgnization = customerApp.Constituation_of_Orgnization,
+
+                            Fk_Certificate = request.Certification_Id,
+                            AssignTo = request.ReviewerId,
+
+                            Audit_Type = "",   // Set based on logic
+                            Scop_of_Certification = "",
+
+                            Availbility_of_TechnicalAreas = false,
+                            Availbility_of_Auditor = false,
+                            Audit_Lang = "",
+
+                            IsInterpreter = false,
+                            IsMultisitesampling = false,
+                            Total_site = reviewerSites?.Count ?? 0,
+
+                            Sample_Site = new List<LabelValue>(),
+                            Shift_Details = new List<LabelValue>(),
+
+                            Seasonality_Factor = null,
+                            AnyAllergens = null,
+
+                            CustomerSites = reviewerSites,
+                            KeyPersonnels = keyPersonnelsList,
+                            MandaysLists = reviewerMandays,
+                            reviewerKeyPersonnel = reviewerKeyPersonnels,
+
+                            Technical_Areas = new List<TechnicalAreasList>(),
+                            Accreditations = new List<AccreditationsList>(),
+                            productCategoryAndSubs = new List<ProductCategoryAndSubCategoryList>(),
+                            hACCPLists = new List<HACCPList>(),
+                            standardsLists = new List<StandardsList>(),
+                            categoryLists = new List<CategoryList>(),
+                            subCategoryLists = new List<SubCategoryList>(),
+
+                            ReviewerThreatList = new List<ReviewerThreatList>(),
+                            ReviewerRemarkList = new List<ReviewerRemarkList>(),
+                            TargetDate = request.targetDate,
+                            CreatedAt = DateTime.Now,
+                            CreatedBy = userId,
+                            Status = status.Id,
+                            IsDelete = false,
+                            IsFinalSubmit = false,
+                            Fk_UserId = request.ReviewerId
+                        });
+                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                        {
+                            await _fssc.InsertOneAsync(new tbl_FSSC_Application
+                            {
+                                ApplicationId = request.ApplicationId,
+                                Application_Received_date = DateTime.Now,
+                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
+                                ApplicationName = customerApp.ApplicationId,
+                                Orgnization_Name = customerApp.Orgnization_Name,
+                                Constituation_of_Orgnization = customerApp.Constituation_of_Orgnization,
+
+                                Fk_Certificate = request.Certification_Id,
+                                AssignTo = request.TrineeId,
+                                TargetDate = request.targetDate,
+                                Audit_Type = "",   // Set based on logic
+                                Scop_of_Certification = "",
+
+                                Availbility_of_TechnicalAreas = false,
+                                Availbility_of_Auditor = false,
+                                Audit_Lang = "",
+
+                                IsInterpreter = false,
+                                IsMultisitesampling = false,
+                                Total_site = reviewerSites?.Count ?? 0,
+
+                                Sample_Site = new List<LabelValue>(),
+                                Shift_Details = new List<LabelValue>(),
+
+                                Seasonality_Factor = null,
+                                AnyAllergens = null,
+
+                                CustomerSites = reviewerSites,
+                                KeyPersonnels = keyPersonnelsList,
+                                MandaysLists = reviewerMandays,
+                                reviewerKeyPersonnel = reviewerKeyPersonnels,
+
+                                Technical_Areas = new List<TechnicalAreasList>(),
+                                Accreditations = new List<AccreditationsList>(),
+                                productCategoryAndSubs = new List<ProductCategoryAndSubCategoryList>(),
+                                hACCPLists = new List<HACCPList>(),
+                                standardsLists = new List<StandardsList>(),
+                                categoryLists = new List<CategoryList>(),
+                                subCategoryLists = new List<SubCategoryList>(),
+
+                                ReviewerThreatList = new List<ReviewerThreatList>(),
+                                ReviewerRemarkList = new List<ReviewerRemarkList>(),
+
+                                CreatedAt = DateTime.Now,
+                                CreatedBy = userId,
+
+                                Status = status.Id,
+                                IsDelete = false,
+                                IsFinalSubmit = false,
+                                Fk_UserId = request.TrineeId
+                            });
+                        }
+
+                        break;
+
+
+                    case "ICMED":
+                        var icmedApplication = new tbl_ICMED_Application
+                        {
+                            ApplicationId = request.ApplicationId,
+                            Application_Received_date = DateTime.Now,
+                            ApplicationName = customerApp.ApplicationId,
+                            Orgnization_Name = customerApp.Orgnization_Name,
+                            Fk_Certificate = request.Certification_Id,
+                            Certification_Name = masterCert.Certificate_Name, // if you have it
+                            Scop_of_Certification = "",  // set as per your logic or request
+                            Audit_Type = "",             // set as per your logic
+                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
+                            remark = "",
+                            Availbility_of_TechnicalAreas = false,
+                            Availbility_of_Auditor = false,
+                            Audit_Lang = "",
+                            ActiveState = 1,
+                            IsInterpreter = false,
+                            IsMultisitesampling = false,
+                            Total_site = reviewerSites?.Count ?? 0,
+                            TargetDate = request.targetDate,
+                            Sample_Site = new List<LabelValue>(),
+                            Shift_Details = new List<LabelValue>(),
+
+                            ApplicationReviewDate = null,
+                            CreatedAt = DateTime.Now,
+                            CreatedBy = userId,
+                            Status = status.Id,
+                            IsDelete = false,
+                            IsFinalSubmit = false,
+                            Fk_UserId = request.ReviewerId,
+                            AssignTo = request.ReviewerId,
+                            Technical_Areas = new List<TechnicalAreasList>(),
+                            Accreditations = new List<AccreditationsList>(),
+                            CustomerSites = reviewerSites,
+                            KeyPersonnels = keyPersonnelsList,
+                            MandaysLists = reviewerMandays,
+                            reviewerKeyPersonnel = reviewerKeyPersonnels,
+                            ThreatLists = new List<ThreatList>(),
+                            ReviewerThreatList = new List<ReviewerThreatList>(),
+                            ReviewerRemarkList = new List<ReviewerRemarkList>()
+                        };
+
+                        await _icmed.InsertOneAsync(icmedApplication);
+
+                        // If trainee is also assigned, create one more entry
+                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                        {
+                            var traineeIcmdApplication = new tbl_ICMED_Application
+                            {
+                                ApplicationId = request.ApplicationId,
+                                Application_Received_date = DateTime.Now,
+                                ApplicationName = customerApp.ApplicationId,
+                                Orgnization_Name = customerApp.Orgnization_Name,
+                                Fk_Certificate = request.Certification_Id,
+                                Certification_Name = masterCert.Certificate_Name,
+                                Scop_of_Certification = "",
+                                Audit_Type = "",
+                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
+                                remark = "",
+                                Availbility_of_TechnicalAreas = false,
+                                Availbility_of_Auditor = false,
+                                Audit_Lang = "",
+                                ActiveState = 1,
+                                IsInterpreter = false,
+                                IsMultisitesampling = false,
+                                Total_site = reviewerSites?.Count ?? 0,
+                                TargetDate = request.targetDate,
+                                Sample_Site = new List<LabelValue>(),
+                                Shift_Details = new List<LabelValue>(),
+
+                                ApplicationReviewDate = null,
+                                CreatedAt = DateTime.Now,
+                                CreatedBy = userId,
+                                Status = status.Id,
+                                IsDelete = false,
+                                IsFinalSubmit = false,
+                                Fk_UserId = request.TrineeId,
+                                AssignTo = request.TrineeId,
+                                Technical_Areas = new List<TechnicalAreasList>(),
+                                Accreditations = new List<AccreditationsList>(),
+                                CustomerSites = reviewerSites,
+                                KeyPersonnels = keyPersonnelsList,
+                                MandaysLists = reviewerMandays,
+                                reviewerKeyPersonnel = reviewerKeyPersonnels,
+                                ThreatLists = new List<ThreatList>(),
+                                ReviewerThreatList = new List<ReviewerThreatList>(),
+                                ReviewerRemarkList = new List<ReviewerRemarkList>()
+                            };
+
+                            await _icmed.InsertOneAsync(traineeIcmdApplication);
+                        }
+
+                        break;
+
+
+                    case "ICMED_PLUS":
+
+                        var icmedplusApplication = new tbl_ICMED_PLUS_Application
+                        {
+                            ApplicationId = request.ApplicationId,
+                            Application_Received_date = DateTime.Now,
+                            ApplicationName = customerApp.ApplicationId,
+                            Orgnization_Name = customerApp.Orgnization_Name,
+                            Fk_Certificate = request.Certification_Id,
+                            Certification_Name = masterCert.Certificate_Name, // if you have it
+                            Scop_of_Certification = "",  // set as per your logic or request
+                            Audit_Type = "",             // set as per your logic
+                            ActiveReviwer = request.ApplicationId ?? "ReviewerTwo",
+                            remark = "",
+                            Availbility_of_TechnicalAreas = false,
+                            Availbility_of_Auditor = false,
+                            Audit_Lang = "",
+                            ActiveState = 1,
+                            IsInterpreter = false,
+                            IsMultisitesampling = false,
+                            Total_site = reviewerSites?.Count ?? 0,
+                            TargetDate = request.targetDate,
+                            Sample_Site = new List<LabelValue>(),
+                            Shift_Details = new List<LabelValue>(),
+
+                            ApplicationReviewDate = null,
+                            CreatedAt = DateTime.Now,
+                            CreatedBy = userId,
+                            Status = status.Id,
+                            IsDelete = false,
+                            IsFinalSubmit = false,
+                            Fk_UserId = request.ReviewerId,
+                            AssignTo = request.ReviewerId,
+                            Technical_Areas = new List<TechnicalAreasList>(),
+                            Accreditations = new List<AccreditationsList>(),
+                            CustomerSites = reviewerSites,
+                            KeyPersonnels = keyPersonnelsList,
+                            MandaysLists = reviewerMandays,
+                            reviewerKeyPersonnel = reviewerKeyPersonnels,
+                            ThreatLists = new List<ThreatList>(),
+                            ReviewerThreatList = new List<ReviewerThreatList>(),
+                            ReviewerRemarkList = new List<ReviewerRemarkList>()
+                        };
+
+                        await _icmedplus.InsertOneAsync(icmedplusApplication);
+
+                        // If trainee is also assigned, create one more entry
+                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                        {
+                            var traineeIcmdplusApplication = new tbl_ICMED_PLUS_Application
+                            {
+                                ApplicationId = request.ApplicationId,
+                                Application_Received_date = DateTime.Now,
+                                ApplicationName = customerApp.ApplicationId,
+                                Orgnization_Name = customerApp.Orgnization_Name,
+                                Fk_Certificate = request.Certification_Id,
+                                Certification_Name = masterCert.Certificate_Name,
+                                Scop_of_Certification = "",
+                                Audit_Type = "",
+                                ActiveReviwer = request.ApplicationId ?? "ReviewerOne",
+                                remark = "",
+                                Availbility_of_TechnicalAreas = false,
+                                Availbility_of_Auditor = false,
+                                Audit_Lang = "",
+                                ActiveState = 1,
+                                IsInterpreter = false,
+                                IsMultisitesampling = false,
+                                Total_site = reviewerSites?.Count ?? 0,
+                                TargetDate = request.targetDate,
+                                Sample_Site = new List<LabelValue>(),
+                                Shift_Details = new List<LabelValue>(),
+
+                                ApplicationReviewDate = null,
+                                CreatedAt = DateTime.Now,
+                                CreatedBy = userId,
+                                Status = status.Id,
+                                IsDelete = false,
+                                IsFinalSubmit = false,
+                                Fk_UserId = request.TrineeId,
+                                AssignTo = request.TrineeId,
+                                Technical_Areas = new List<TechnicalAreasList>(),
+                                Accreditations = new List<AccreditationsList>(),
+                                CustomerSites = reviewerSites,
+                                KeyPersonnels = keyPersonnelsList,
+                                MandaysLists = reviewerMandays,
+                                reviewerKeyPersonnel = reviewerKeyPersonnels,
+                                ThreatLists = new List<ThreatList>(),
+                                ReviewerThreatList = new List<ReviewerThreatList>(),
+                                ReviewerRemarkList = new List<ReviewerRemarkList>()
+                            };
+
+                            await _icmedplus.InsertOneAsync(traineeIcmdplusApplication);
+                        }
+
+                        break;
+
+
+                    case "IMDR":
+
+                        // Insert Reviewer (main)
+                        await _imdr.InsertOneAsync(new tbl_IMDR_Application
+                        {
+                            ApplicationId = request.ApplicationId,
+                            ApplicationName = customerApp.ApplicationId,
+                            Application_Received_date = DateTime.Now,
+                            ActiveReviwer = request.ApplicationId ?? "ReviwerTwo",  // Default reviewer role
+                            Orgnization_Name = customerApp.Orgnization_Name,
+                            Fk_Certificate = request.Certification_Id,
+                            AssignTo = request.ReviewerId,
+                            TargetDate = request.targetDate,
+
+                            // IMDR-specific fields
+                            Scop_of_Certification = "",
+                            DeviceMasterfile = "",
+                            Technical_Areas = new List<TechnicalAreasList>(),
+                            Availbility_of_TechnicalAreas = false,
+                            Availbility_of_Auditor = false,
+                            Audit_Lang = "",
+                            IsInterpreter = false,
+
+                            // Collections
+                            CustomerSites = reviewerSites ?? new List<ReviewerSiteDetails>(),
+                            //KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
+                            //imdrManDays = imdrMandaysList ?? new List<ImdrManDays>(),
+                            //reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
+                            //ReviewerThreatList = reviewerThreatLists ?? new List<ReviewerThreatList>(),
+                            //ReviewerRemarkList = reviewerRemarkLists ?? new List<ReviewerRemarkList>(),
+                            //mdrauditLists = mdrauditLists ?? new List<MDRAuditList>(),
+
+                            // Meta
+                            CreatedAt = DateTime.Now,
+                            CreatedBy = userId,
+                            Status = status.Id,
+                            IsDelete = false,
+                            IsFinalSubmit = false,
+                            Fk_UserId = request.ReviewerId
+                        });
+
+                        // Insert Trainee (if present)
+                        if (!string.IsNullOrWhiteSpace(request.TrineeId))
+                        {
+                            await _imdr.InsertOneAsync(new tbl_IMDR_Application
+                            {
+                                ApplicationId = request.ApplicationId,
+                                ApplicationName = customerApp.ApplicationId,
+                                Application_Received_date = DateTime.Now,
+                                ActiveReviwer = request.ApplicationId ?? "ReviwerOne",  // Default trainee role
+                                Orgnization_Name = customerApp.Orgnization_Name,
+                                Fk_Certificate = request.Certification_Id,
+                                AssignTo = request.TrineeId,
+                                TargetDate = request.targetDate,
+
+                                // IMDR-specific fields
+                                Scop_of_Certification = "",
+                                DeviceMasterfile = "",
+                                Technical_Areas = new List<TechnicalAreasList>(),
+                                Availbility_of_TechnicalAreas = false,
+                                Availbility_of_Auditor = false,
+                                Audit_Lang = "",
+                                IsInterpreter = false,
+
+                                // Collections
+                                CustomerSites = reviewerSites ?? new List<ReviewerSiteDetails>(),
+                                KeyPersonnels = keyPersonnelsList ?? new List<KeyPersonnelList>(),
+                                //imdrManDays = imdrMandaysList ?? new List<ImdrManDays>(),
+                                //reviewerKeyPersonnel = reviewerkeyPersonnelsList ?? new List<ReviewerKeyPersonnelList>(),
+                                //ReviewerThreatList = reviewerThreatLists ?? new List<ReviewerThreatList>(),
+                                //ReviewerRemarkList = reviewerRemarkLists ?? new List<ReviewerRemarkList>(),
+                                //mdrauditLists = mdrauditLists ?? new List<MDRAuditList>(),
+
+                                // Meta
+                                CreatedAt = DateTime.Now,
+                                CreatedBy = userId,
+                                Status = status.Id,
+                                IsDelete = false,
+                                IsFinalSubmit = false,
+                                Fk_UserId = request.TrineeId
+                            });
+                        }
+
+                        break;
+
+
+                    default:
+                        // Handle unknown certification if needed
+                        break;
+
+                }
+
+                // ✅ Final Success
+                response.Message = "Application assigned successfully.";
+                response.Success = true;
+                response.HttpStatusCode = System.Net.HttpStatusCode.OK;
+                response.ResponseCode = 0;
             }
-            else
+            catch (Exception ex)
             {
-                response.Message = "Invalid Token.";
+                response.Message = "AssignApplication Exception: " + ex.Message;
                 response.Success = false;
-                response.HttpStatusCode = System.Net.HttpStatusCode.Unauthorized;
+                response.HttpStatusCode = System.Net.HttpStatusCode.InternalServerError;
                 response.ResponseCode = 1;
             }
 
             return response;
         }
+
 
         public async Task<userDropdownResponse> GetDropdown(userDropdownRequest request)
         {
@@ -2457,58 +2806,7 @@ namespace ZenithApp.ZenithRepository
                 return await pipeline.ToListAsync();
             }
 
-        //private T MergeDataInPlace<T>(T admin, T reviewer, T trainee) where T : class, new()
-        //{
-        //    // If admin record doesn’t exist, create new target (empty object)
-        //    var target = admin ?? new T();
-
-        //    var excludedFields = new[] { "AssignTo", "Id", "UserFk", "ActiveState" , "ActiveReviwer" };
-
-        //    foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        //    {
-        //        if (excludedFields.Contains(prop.Name))
-        //            continue;
-
-        //        var adminValue = admin != null ? prop.GetValue(admin) : null;
-        //        var reviewerValue = reviewer != null ? prop.GetValue(reviewer) : null;
-        //        var traineeValue = trainee != null ? prop.GetValue(trainee) : null;
-        //        var currentValue = prop.GetValue(target);
-
-        //        if (HasValue(adminValue))
-        //        {
-        //            // Admin wins
-        //            prop.SetValue(target, adminValue);
-        //        }
-        //        else if (HasValue(reviewerValue))
-        //        {
-        //            // Reviewer fallback
-        //            prop.SetValue(target, reviewerValue);
-        //        }
-        //        else if (HasValue(traineeValue))
-        //        {
-        //            // Trainee fallback
-        //            prop.SetValue(target, traineeValue);
-        //        }
-        //        // else leave default/null
-        //    }
-
-        //    return target;
-        //}
-
-        //private bool HasValue(object value)
-        //{
-        //    if (value == null) return false;
-        //    if (value is string str) return !string.IsNullOrWhiteSpace(str);
-
-        //    var type = value.GetType();
-        //    if (type.IsValueType)
-        //        return !value.Equals(Activator.CreateInstance(type));
-
-        //    if (value is System.Collections.IEnumerable enumerable && !(value is string))
-        //        return enumerable.GetEnumerator().MoveNext();
-
-        //    return true;
-        //}
+        
         private T MergeDataByLatest<T>(T admin, T reviewer, T trainee) where T : class, new()
         {
             var target = new T();
@@ -2557,9 +2855,7 @@ namespace ZenithApp.ZenithRepository
             return target;
         }
 
-        /// <summary>
-        /// Get UpdatedAt or CreatedAt timestamp from object
-        /// </summary>
+        
         private DateTime GetUpdatedDate<T>(T obj)
         {
             if (obj == null) return DateTime.MinValue;
@@ -2577,9 +2873,6 @@ namespace ZenithApp.ZenithRepository
             return DateTime.MinValue;
         }
 
-        /// <summary>
-        /// Check if value is valid (not null/empty/default)
-        /// </summary>
         private bool HasValue(object value)
         {
             if (value == null) return false;
@@ -2599,76 +2892,224 @@ namespace ZenithApp.ZenithRepository
         public async Task<BaseResponse> SaveApplicationStatus(statusRequest request)
         {
             var response = new addReviewerApplicationResponse();
-            var UserId = _acc.HttpContext?.Session.GetString("UserId");
-            var userFkRole = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Fk_RoleID;
-            var department = (await _user.Find(x => x.Id == UserId).FirstOrDefaultAsync())?.Department;
-            var userType = (await _role.Find(x => x.Id == userFkRole).FirstOrDefaultAsync())?.roleName;
-                try
+
+            try
+            {
+                if (string.IsNullOrEmpty(request.applicationId) || string.IsNullOrEmpty(request.type))
                 {
-                    
-                    if (!string.IsNullOrEmpty(request.applicationId))
-                    {
-                        var filter = Builders<tbl_ISO_Application>.Filter.Eq(x => x.ApplicationId, request.applicationId);
-                        if (request.status == "Approved")
-                        {
-                            var update = Builders<tbl_ISO_Application>.Update
-                            .Set(x => x.Status, "68a80adcf43ed36702310521")
-                            .Set(x => x.UpdatedAt, DateTime.UtcNow); // or DateTime.Now if you prefer local time
-
-                            await _iso.UpdateManyAsync(filter, update);
-
-                         var application = await _customercertificates
-                            .Find(x => x.Id == request.applicationId)
-                            .FirstOrDefaultAsync();
-
-                            if (application != null)
-                            {
-                                var updateStatus = Builders<tbl_customer_certificates>.Update
-                                    .Set(x => x.status, "68a80adcf43ed36702310521")
-                                    .Set(x => x.UpdatedAt, DateTime.Now); // optional
-
-                                var result = await _customercertificates.UpdateOneAsync(
-                                    x => x.Id == request.applicationId,
-                                    updateStatus
-                                );
-
-                                if (result.ModifiedCount == 0)
-                                {
-                                    Console.WriteLine("⚠️ No document was updated. Check ID type/field name.");
-                                }
-                            }
-
-
-
-                    }
-                    else if(request.status=="Rejected")
-                        {
-                            var update = Builders<tbl_ISO_Application>.Update
-                            .Set(x => x.Status, "68ac658b45a82f9f829724db")
-                            .Set(x => x.UpdatedAt, DateTime.UtcNow); // or DateTime.Now if you prefer local time
-
-                            await _iso.UpdateManyAsync(filter, update);
-                        }
-                        
-
-                        //response.Data = new List<tbl_ISO_Application> { result };
-                        response.Message = "status Saved successfully.";
-                        response.HttpStatusCode = System.Net.HttpStatusCode.OK;
-                        response.Success = true;
-                        response.ResponseCode = 0;
-                    }
-
-                }
-                catch (Exception ex)
-                {
-                    response.Message = "SubmitFsscApplication Exception: " + ex.Message;
-                    response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                    response.Message = "ApplicationId or Type is missing.";
+                    response.HttpStatusCode = HttpStatusCode.BadRequest;
                     response.Success = false;
+                    return response;
                 }
-            
+
+                // map status to ObjectId string
+                string statusId = request.status switch
+                {
+                    "Approved" => "68a80adcf43ed36702310521",
+                    "Rejected" => "68ac658b45a82f9f829724db",
+                    _ => null
+                };
+
+                if (statusId == null)
+                {
+                    response.Message = $"Invalid status: {request.status}";
+                    response.HttpStatusCode = HttpStatusCode.BadRequest;
+                    response.Success = false;
+                    return response;
+                }
+
+                // update depending on type
+                switch (request.type.ToLower())
+                {
+                    case "iso":
+                        await UpdateStatusAsync(_iso, request.applicationId, statusId);
+                        break;
+
+                    case "fssc":
+                        await UpdateStatusAsync(_fssc, request.applicationId, statusId);
+                        break;
+
+                    case "icmed":
+                        await UpdateStatusAsync(_icmed, request.applicationId, statusId);
+                        break;
+
+                    case "imdr":
+                        await UpdateStatusAsync(_imdr, request.applicationId, statusId);
+                        break;
+
+                    case "icmdplus":
+                        await UpdateStatusAsync(_icmedplus, request.applicationId, statusId);
+                        break;
+
+                    default:
+                        response.Message = $"Invalid application type: {request.type}";
+                        response.HttpStatusCode = HttpStatusCode.BadRequest;
+                        response.Success = false;
+                        return response;
+                }
+
+                // also update customer certificates
+                var certUpdate = Builders<tbl_customer_certificates>.Update
+                    .Set(x => x.status, statusId)
+                    .Set(x => x.UpdatedAt, DateTime.UtcNow);
+
+                await _customercertificates.UpdateOneAsync(
+                    x => x.Id == request.applicationId,
+                    certUpdate
+                );
+
+                response.Message = $"{request.type} status updated successfully.";
+                response.HttpStatusCode = HttpStatusCode.OK;
+                response.Success = true;
+                response.ResponseCode = 0;
+            }
+            catch (Exception ex)
+            {
+                response.Message = "SaveApplicationStatus Exception: " + ex.Message;
+                response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                response.Success = false;
+            }
 
             return response;
         }
+
+        private async Task UpdateStatusAsync<T>(IMongoCollection<T> collection, string applicationId, string statusId)
+        {
+            var filter = Builders<T>.Filter.Eq("ApplicationId", applicationId);
+            var update = Builders<T>.Update
+                .Set("Status", statusId)
+                .Set("UpdatedAt", DateTime.UtcNow);
+
+            await collection.UpdateOneAsync(filter, update);
+        }
+
+        [HttpPost("AddOrUpdateMasterUser")]
+        public async Task<BaseResponse> AddOrUpdateMasterUser([FromBody] AddMasterUsersRequest request)
+        {
+            var response = new BaseResponse();
+            var sessionUserId = _acc.HttpContext?.Session.GetString("UserId");
+            var UserId = _acc.HttpContext?.Session.GetString("UserId");
+            try
+            {
+                if (request == null)
+                {
+                    return new BaseResponse
+                    {
+                        Message = "Data is required.",
+                        HttpStatusCode = HttpStatusCode.BadRequest,
+                        Success = false
+                    };
+                }
+
+                // Get current user's name
+                var currentUser = _user.Find(x => x.Id == sessionUserId).FirstOrDefault();
+                var createdByName = currentUser?.FullName ?? "System";
+
+                // Check if user already exists (by Id or Email)
+                tbl_user existingUser = null;
+                if (!string.IsNullOrEmpty(request.UserId))
+                {
+                    existingUser = _user.Find(x => x.Id == request.UserId).FirstOrDefault();
+                }
+                else
+                {
+                    // Optional: Check if same email already exists
+                    existingUser = _user.Find(x => x.EmailId == request.Email).FirstOrDefault();
+                }
+
+                if (existingUser != null)
+                {
+                    // --- UPDATE FLOW ---
+                    existingUser.FullName = request.FullName;
+                    existingUser.EmailId = request.Email;
+                    existingUser.ContactNo = request.Mobile;
+                    existingUser.Password = request.Password;
+                    existingUser.UpdatedAt = DateTime.UtcNow;
+                    existingUser.UpdatedBy = sessionUserId;
+                    existingUser.FkCertificate = request.CertificateId;
+                    existingUser.CertificateName = _masterCertificate.Find(x => x.Id == request.CertificateId).FirstOrDefault().Certificate_Name;
+
+                    await _user.ReplaceOneAsync(x => x.Id == existingUser.Id, existingUser);
+
+                    response.Message = "User updated successfully.";
+                }
+                else
+                {
+                    // --- ADD NEW FLOW ---
+                    var newUser = new tbl_user
+                    {
+                        FullName = request.FullName,
+                        EmailId = request.Email,
+                        ContactNo = request.Mobile,
+                        Password = request.Password,
+                        IsDelete = 0,
+                        CreatedBy = createdByName,
+                        UpdatedBy = sessionUserId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                        CertificateName = _masterCertificate.Find(x=>x.Id==request.CertificateId).FirstOrDefault().Certificate_Name,
+                        Type = "MasterAdmin",
+                        Fk_RoleID = "686fc53af41f7edee9b89cd5",
+                        UserName = request.Email,
+                        FkCertificate = request.CertificateId
+                    };
+
+                    await _user.InsertOneAsync(newUser);
+                    response.Message = "User added successfully.";
+                }
+
+                response.Success = true;
+                response.HttpStatusCode = HttpStatusCode.OK;
+                response.ResponseCode = 0;
+            }
+            catch (Exception ex)
+            {
+                response.Message = $"Error: {ex.Message}";
+                response.HttpStatusCode = HttpStatusCode.InternalServerError;
+                response.Success = false;
+            }
+
+            return response;
+        }
+        [HttpGet("GetMasterUsers")]
+        public async Task<GetMasterUsersResponse> GetMasterUsers(GetMasterUsersRequest request)
+        {
+            var response = new GetMasterUsersResponse();
+
+            try
+            {
+                if (!string.IsNullOrEmpty(request.UserId))
+                {
+                    // Get single user
+                    var user = await _user.Find(x => x.Id == request.UserId && x.IsDelete == 0 && x.Type == "MasterAdmin").FirstOrDefaultAsync();
+                    response.Data = user != null ? new List<tbl_user> { user } : new List<tbl_user>();
+                }
+                else
+                {
+                    // Get all active users
+                    response.Data = await _user.Find(x => x.IsDelete == 0 && x.Type == "MasterAdmin").ToListAsync();
+                }
+
+                response.Success = true;
+                response.HttpStatusCode = HttpStatusCode.OK;
+                response.Message = "Users fetched successfully.";
+            }
+            catch (Exception ex)
+            {
+                response.Success = false;
+                response.Message = "Error: " + ex.Message;
+                response.HttpStatusCode = HttpStatusCode.InternalServerError;
+            }
+
+            return response;
+        }
+        //new code by swapnil 
+        
+
+
+        //new code by swapnil 
+
 
 
         protected override void Disposing()

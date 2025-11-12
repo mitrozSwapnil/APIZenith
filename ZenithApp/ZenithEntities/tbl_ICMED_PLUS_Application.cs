@@ -11,7 +11,12 @@ namespace ZenithApp.ZenithEntities
         public string Id { get; set; }
         public string? ApplicationId { get; set; }
         public DateTime? Application_Received_date { get; set; }
+        public string? ApplicationName { get; set; }
+        public string? CertiFicateName { get; set; }
+        public string? Constituation_of_Orgnization { get; set; }
+        public DateTime? TargetDate { get; set; }
         public string? Orgnization_Name { get; set; }
+        public string? Application_Status { get; set; }
         public string? Certification_Name { get; set; }
         public string? Audit_Type { get; set; }
         public string? ActiveReviwer { get; set; }
@@ -60,5 +65,6 @@ namespace ZenithApp.ZenithEntities
         public List<ThreatList> ThreatLists { get; set; } = new List<ThreatList>();
         public List<ReviewerThreatList> ReviewerThreatList { get; set; } = new List<ReviewerThreatList>();
         public List<ReviewerRemarkList> ReviewerRemarkList { get; set; } = new List<ReviewerRemarkList>();
+
     }
 }

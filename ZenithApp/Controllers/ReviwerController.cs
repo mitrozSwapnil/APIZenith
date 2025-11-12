@@ -106,7 +106,33 @@ namespace ZenithApp.Controllers
              _acc.HttpContext?.Session.SetString("UserId", UserId);
              return this.ProcessRequest<BaseResponse>(model);
         }
-
+        [HttpPost("GetFieldComments")]
+        public IActionResult GetFieldComments(GetFieldCommentsRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<GetFieldCommentsResponse>(model);
+        }
+        [HttpPost("ResolveFieldComment")]
+        public IActionResult ResolveFieldComment(ResolveCommentRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<BaseResponse>(model);
+        }
+         [HttpPost("SaveFileImage")]
+        public IActionResult SaveFileImage(uploadFileRequest model)
+        {
+            var claims = HttpContext.User.Claims;
+            var userNameDetails = claims.FirstOrDefault(c => c.Type == "UserId");
+            var UserId = userNameDetails.Value;
+            _acc.HttpContext?.Session.SetString("UserId", UserId);
+            return this.ProcessRequest<SaveFileResponse>(model);
+        }
 
         protected override BaseResponse Execute(string action, BaseRequest request)
         {
@@ -135,7 +161,6 @@ namespace ZenithApp.Controllers
             {
                 return _reviwerRepository.SaveICMED_Plus_Application(request as addICMEDApplicationRequest).Result;
             }
-
             else if (action == nameof(SaveFSSCApplication))
             {
                 return _reviwerRepository.SaveFSSCApplication(request as addFsscApplicationRequest).Result;
@@ -148,10 +173,18 @@ namespace ZenithApp.Controllers
             {
                 return _reviwerRepository.AddFieldComment(request as FieldCommentRequest).Result;
             }
-
-
-
-
+            else if (action == nameof(GetFieldComments))
+            {
+                return _reviwerRepository.GetFieldComments(request as GetFieldCommentsRequest).Result;
+            }
+            else if (action == nameof(ResolveFieldComment))
+            {
+                return _reviwerRepository.ResolveFieldComment(request as ResolveCommentRequest).Result;
+            }
+            else if (action == nameof(SaveFileImage))
+            {
+                return _reviwerRepository.SaveFileImage(request as uploadFileRequest).Result;
+            }
 
             throw new NotImplementedException();
             
