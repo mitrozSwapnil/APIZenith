@@ -1785,20 +1785,10 @@ namespace ZenithApp.ZenithRepository
                         //    var updatestatus = Builders<tbl_customer_certificates>.Update.Set(x => x.status, Adminstatus);
                         //    await _customercertificates.UpdateOneAsync(x => x.Id == request.ApplicationId, updatestatus);
                         //}
-                        var certFilter = Builders<tbl_customer_application>.Filter.And(
-                            Builders<tbl_customer_application>.Filter.Eq(x => x.Id, request.ApplicationId),
-                            Builders<tbl_customer_application>.Filter.ElemMatch(
-                                x => x.Fk_ApplicationCertificates,
-                                c => c.Id == request.Fk_Certificate
-                            )
-                        );
-
-                        var certUpdate = Builders<tbl_customer_application>.Update
-                            .Set(x => x.Fk_ApplicationCertificates[-1].Status, Adminstatus)
-                            .Set(x => x.UpdatedAt, DateTime.UtcNow)
-                            .Set(x => x.UpdatedBy, UserId);
-
-                        await _customer.UpdateOneAsync(certFilter, certUpdate);
+                        if (!string.IsNullOrEmpty(request.ApplicationId) && !string.IsNullOrEmpty(request.Fk_Certificate))
+                        {
+                            await UpdateCertificateStatusAsync(request.ApplicationId, request.Fk_Certificate, Adminstatus);
+                        }
 
                         response.Message = "ICMED Application saved successfully.";
                         response.HttpStatusCode = System.Net.HttpStatusCode.OK;
